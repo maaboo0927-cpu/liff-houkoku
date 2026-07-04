@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>業務報告フォーム</title>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- LIFF SDK -->
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+  /* iOSでinputが16px未満だとズームされるのを防止 */
+  input, select { font-size: 16px; }
+</style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+
+<div class="max-w-md mx-auto p-4 pb-10">
+
+  <!-- ヘッダー -->
+  <div class="bg-emerald-600 text-white rounded-2xl p-4 mb-4 shadow">
+    <h1 class="text-lg font-bold">📋 業務報告</h1>
+    <p class="text-emerald-100 text-sm mt-1">本日の稼働内容を報告してください</p>
+    <p id="profileName" class="text-sm mt-2 font-semibold hidden"></p>
+  </div>
+
+  <!-- 送信完了画面（初期は非表示） -->
+  <div id="doneView" class="hidden bg-white rounded-2xl p-8 text-center shadow">
+    <div class="text-5xl mb-3">✅</div>
+    <p class="text-lg font-bold text-slate-800">送信しました</p>
+    <p class="text-sm text-slate-500 mt-2">お疲れさまでした。<br>この画面は自動で閉じます。</p>
+  </div>
+
+  <!-- フォーム本体 -->
+  <form id="reportForm" class="space-y-4">
+
+    <!-- 1. 本日の担当業務 -->
+    <div class="bg-white rounded-2xl p-4 shadow">
+      <label class="block text-sm font-bold text-slate-700 mb-2">本日の担当業務 <span class="text-red-500">*</span></label>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="role-card cursor-pointer">
+          <input type="radio" name="role" value="回送" class="peer sr-only" checked>
+          <div class="peer-checked:border-emerald-500 peer-checked:bg-emerald-50 peer-checked:text-emerald-700 border-2 border-slate-200 rounded-xl py-3 text-center font-bold text-slate-500">
+            🚚 回送
+          </div>
+        </label>
+        <label class="role-card cursor-pointer">
+          <input type="radio" name="role" value="OP" class="peer sr-only">
+          <div class="peer-checked:border-emerald-500 peer-checked:bg-emerald-50 peer-checked:text-emerald-700 border-2 border-slate-200 rounded-xl py-3 text-center font-bold text-slate-500">
+            🏗️ OP
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <!-- 日付・現場（カレンダー案件から選択） -->
+    <div class="bg-white rounded-2xl p-4 shadow space-y-4">
+      <div>
+        <label class="block text-sm font-bold text-slate-700 mb-1">日付 <span class="text-red-500">*</span></label>
+        <div class="grid grid-cols-2 gap-3 mb-2">
+          <button type="button" id="dateTodayBtn" onclick="setDateMode('today')"
+                  class="border-2 rounded-xl py-2.5 text-center font-bold text-sm"></button>
+          <button type="button" id="dateOtherBtn" onclick="setDateMode('other')"
+                  class="border-2 rounded-xl py-2.5 text-center font-bold text-sm">それ以外</button>
+        </div>
+        <p id="dateLabel" class="text-sm font-bold text-emerald-700"></p>
+        <!-- 簡易カレンダー（「それ以外」選択時のみ表示） -->
+        <div id="calWrap" class="hidden mt-2 border border-slate-200 rounded-xl p-3 bg-slate-50">
+          <div class="flex items-center justify-between mb-2">
+            <button type="button" onclick="moveMonth(-1)" class="w-9 h-9 rounded-lg border border-slate-200 bg-white text-slate-500 font-bold">‹</button>
+            <span id="calTitle" class="text-sm font-bold text-slate-700"></span>
+            <button type="button" id="calNextBtn" onclick="moveMonth(1)" class="w-9 h-9 rounded-lg border border-slate-200 bg-white text-slate-500 font-bold disabled:opacity-30">›</button>
+          </div>
+          <div class="grid grid-cols-7 text-center text-xs text-slate-400 mb-1">
+            <span>日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span>土</span>
+          </div>
+          <div id="calGrid" class="grid grid-cols-7 gap-1 text-center"></div>
+        </div>
+      </div>
+      <div>
+        <label class="block text-sm font-bold text-slate-700 mb-1">現場（案件を選択）</label>
+        <select id="siteSelect"
+                class="w-full border border-slate-300 rounded-xl px-3 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+          <option value="">読み込み中…</option>
+        </select>
+        <p class="text-xs text-slate-400 mt-1">未選択でも送信できます（氏名から自動判別）。<br>⚠️ 同じ日に2現場以上入った日は必ず選択してください</p>
+      </div>
+    </div>
+
+    <!-- 2. 距離ブロック（動的表示） -->
+    <div class="bg-white rounded-2xl p-4 shadow space-y-3">
+      <!-- OP選択時のみ表示される例外チェック -->
+      <div id="exceptionWrap" class="hidden">
+        <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+          <input type="checkbox" id="exceptionCheck" class="w-5 h-5 accent-emerald-600">
+          <span>☑ 例外として距離を報告する</span>
+        </label>
+      </div>
+
+      <div id="distanceWrap">
+        <label class="block text-sm font-bold text-slate-700 mb-1">
+          距離(km) <span id="distanceRequiredMark" class="text-red-500">*</span>
+        </label>
+        <input type="number" id="distance" inputmode="decimal" step="0.1" min="0" placeholder="例：45.5"
+               class="w-full border border-slate-300 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+      </div>
+    </div>
+
+    <!-- 駐車料金・IC（行き/帰り 区間入力） -->
+    <div class="bg-white rounded-2xl p-4 shadow space-y-4">
+      <div>
+        <label class="block text-sm font-bold text-slate-700 mb-1">駐車料金（円） <span class="text-xs font-normal text-slate-400">（任意・払った場合のみ）</span></label>
+        <input type="number" id="parking" inputmode="numeric" min="0" step="1" placeholder="例：800"
+               class="w-full border border-slate-300 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+      </div>
+
+      <!-- 3. IC 行き（乗ったIC 〜 降りたIC） -->
+      <div>
+        <label class="block text-sm font-bold text-slate-700 mb-1">使用IC（行き） <span class="text-xs font-normal text-slate-400">（任意・使ってなければ空欄）</span></label>
+        <div class="flex items-center gap-2">
+          <input type="text" id="icGoFrom" placeholder="桜土浦"
+                 class="w-full border border-slate-300 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+          <span class="text-slate-400 font-bold shrink-0">～</span>
+          <input type="text" id="icGoTo" placeholder="谷和原"
+                 class="w-full border border-slate-300 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+        </div>
+      </div>
+      <!-- IC 帰り -->
+      <div>
+        <label class="block text-sm font-bold text-slate-700 mb-1">使用IC（帰り） <span class="text-xs font-normal text-slate-400">（任意）</span></label>
+        <div class="flex items-center gap-2">
+          <input type="text" id="icBackFrom" placeholder="谷和原"
+                 class="w-full border border-slate-300 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+          <span class="text-slate-400 font-bold shrink-0">～</span>
+          <input type="text" id="icBackTo" placeholder="桜土浦"
+                 class="w-full border border-slate-300 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+        </div>
+      </div>
+    </div>
+
+    <!-- LIFF外テスト用の氏名手入力（LIFF取得失敗時のみ表示） -->
+    <div id="manualNameWrap" class="hidden bg-amber-50 border border-amber-300 rounded-2xl p-4">
+      <label class="block text-sm font-bold text-amber-800 mb-1">氏名（LINE名を取得できなかったため手入力）</label>
+      <input type="text" id="manualName" placeholder="例：山田 太郎"
+             class="w-full border border-amber-300 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-amber-500">
+    </div>
+
+    <!-- エラー表示 -->
+    <p id="errorMsg" class="hidden text-sm text-red-600 font-bold text-center"></p>
+
+    <!-- 送信ボタン -->
+    <button type="submit" id="submitBtn"
+            class="w-full bg-emerald-600 hover:bg-emerald-700 active:scale-95 transition text-white font-bold py-4 rounded-2xl shadow-lg text-lg disabled:bg-slate-400 disabled:cursor-not-allowed">
+      送信する
+    </button>
+  </form>
+</div>
+
+<script>
+// ================================================================
+// ★設定（必ず書き換えてください）
+// ================================================================
+const LIFF_ID = "ここにLIFF IDを貼り付け";          // 例: "2001234567-AbCdEfGh"
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwSJG4teN2VjMjKkWUbgeh7O56n6flh9GHt7MmpTagf-Qz-ylyoA-ptNKJqSKqzEtKa5w/exec"; // 2026-07-04 デプロイv1
+// ================================================================
+
+let lineName = "";   // liff.getProfile() で取得したLINE表示名
+let lineUserId = ""; // LINE userId（名簿・リマインド用に自動収集）
+
+// ---------- 日付（本日/それ以外＋簡易カレンダー） ----------
+const DOW_JA = ["日","月","火","水","木","金","土"];
+function fmtDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+const TODAY = new Date(); TODAY.setHours(0,0,0,0);
+const TODAY_STR = fmtDate(TODAY);
+let selectedDate = TODAY_STR;   // 送信・案件取得に使う日付
+let dateMode = "today";
+let calY = TODAY.getFullYear(), calM = TODAY.getMonth();
+
+function setDateMode(mode) {
+  dateMode = mode;
+  if (mode === "today") {
+    selectedDate = TODAY_STR;
+    calY = TODAY.getFullYear(); calM = TODAY.getMonth();
+  }
+  updateDateUI();
+  if (mode === "other") renderCalendar();
+  loadSites();
+}
+
+function updateDateUI() {
+  const on  = "border-2 rounded-xl py-2.5 text-center font-bold text-sm border-emerald-500 bg-emerald-50 text-emerald-700";
+  const off = "border-2 rounded-xl py-2.5 text-center font-bold text-sm border-slate-200 bg-white text-slate-500";
+  const tb = document.getElementById("dateTodayBtn");
+  tb.textContent = `本日（${TODAY.getMonth()+1}/${TODAY.getDate()} ${DOW_JA[TODAY.getDay()]}）`;
+  tb.className = dateMode === "today" ? on : off;
+  document.getElementById("dateOtherBtn").className = dateMode === "other" ? on : off;
+  document.getElementById("calWrap").classList.toggle("hidden", dateMode !== "other");
+  const d = new Date(selectedDate + "T00:00:00");
+  document.getElementById("dateLabel").textContent = `報告日: ${d.getMonth()+1}/${d.getDate()}（${DOW_JA[d.getDay()]}）`;
+}
+
+function moveMonth(diff) {
+  calM += diff;
+  if (calM < 0) { calM = 11; calY--; }
+  if (calM > 11) { calM = 0; calY++; }
+  renderCalendar();
+}
+
+function renderCalendar() {
+  document.getElementById("calTitle").textContent = `${calY}年${calM+1}月`;
+  // 未来の月へは進めない
+  document.getElementById("calNextBtn").disabled =
+    (calY > TODAY.getFullYear()) || (calY === TODAY.getFullYear() && calM >= TODAY.getMonth());
+  const grid = document.getElementById("calGrid");
+  grid.innerHTML = "";
+  const first = new Date(calY, calM, 1);
+  for (let i = 0; i < first.getDay(); i++) grid.appendChild(document.createElement("span"));
+  const lastDay = new Date(calY, calM + 1, 0).getDate();
+  for (let day = 1; day <= lastDay; day++) {
+    const d = new Date(calY, calM, day);
+    const ds = fmtDate(d);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = day;
+    if (d > TODAY) {                     // 未来日は選択不可
+      btn.className = "py-1.5 rounded-lg text-sm text-slate-300";
+      btn.disabled = true;
+    } else if (ds === selectedDate) {    // 選択中
+      btn.className = "py-1.5 rounded-lg text-sm font-bold bg-emerald-600 text-white";
+    } else {
+      btn.className = "py-1.5 rounded-lg text-sm text-slate-700 active:bg-emerald-100";
+    }
+    btn.onclick = () => { selectedDate = ds; updateDateUI(); renderCalendar(); loadSites(); };
+    grid.appendChild(btn);
+  }
+}
+
+// ---------- 初期化 ----------
+window.addEventListener("DOMContentLoaded", async () => {
+  updateDateUI();     // 日付は「本日」がデフォルト
+  updateDistanceUI(); // 初期表示（回送がデフォルト）
+  loadSites();        // 今日のカレンダー案件を読み込み
+
+  // LIFF初期化 → プロフィール取得
+  try {
+    await liff.init({ liffId: LIFF_ID });
+    if (!liff.isLoggedIn()) {
+      liff.login(); // 外部ブラウザで開いた場合はLINEログインへ
+      return;
+    }
+    const profile = await liff.getProfile();
+    lineName = profile.displayName;
+    lineUserId = profile.userId || "";
+    const p = document.getElementById("profileName");
+    p.textContent = `👤 ${lineName} さん`;
+    p.classList.remove("hidden");
+  } catch (e) {
+    // LIFF外（PCブラウザ等）でのテスト用フォールバック
+    console.warn("LIFF init failed:", e);
+    document.getElementById("manualNameWrap").classList.remove("hidden");
+  }
+});
+
+// ---------- カレンダー案件の読み込み（現場プルダウン） ----------
+async function loadSites() {
+  const date = selectedDate;
+  const sel = document.getElementById("siteSelect");
+  sel.innerHTML = '<option value="">読み込み中…</option>';
+  try {
+    const res = await fetch(`${GAS_URL}?action=events&date=${date}`);
+    const json = await res.json();
+    const events = json.events || [];
+    sel.innerHTML = "";
+    if (events.length === 0) {
+      sel.appendChild(new Option("― この日の案件がありません（未選択で送信可）―", ""));
+    } else {
+      sel.appendChild(new Option("案件を選択してください", ""));
+      events.forEach(t => sel.appendChild(new Option(t, t)));
+    }
+  } catch (e) {
+    console.warn("events fetch failed:", e);
+    sel.innerHTML = "";
+    sel.appendChild(new Option("― 取得できませんでした（未選択で送信可）―", ""));
+  }
+}
+
+// ---------- UIの動的切り替え ----------
+function getRole() {
+  return document.querySelector('input[name="role"]:checked').value;
+}
+
+function updateDistanceUI() {
+  const role = getRole();
+  const exceptionWrap = document.getElementById("exceptionWrap");
+  const exceptionCheck = document.getElementById("exceptionCheck");
+  const distanceWrap = document.getElementById("distanceWrap");
+  const distance = document.getElementById("distance");
+  const mark = document.getElementById("distanceRequiredMark");
+
+  if (role === "回送") {
+    // 回送：距離を表示＆必須。例外チェックは不要なので隠す
+    exceptionWrap.classList.add("hidden");
+    exceptionCheck.checked = false;
+    distanceWrap.classList.remove("hidden");
+    distance.required = true;
+    mark.classList.remove("hidden");
+  } else {
+    // OP：基本は距離非表示。例外チェックONの時だけ表示
+    exceptionWrap.classList.remove("hidden");
+    const show = exceptionCheck.checked;
+    distanceWrap.classList.toggle("hidden", !show);
+    distance.required = show; // チェックして表示したなら入力必須
+    mark.classList.toggle("hidden", !show);
+    if (!show) distance.value = ""; // 非表示時は値をクリア（誤送信防止）
+  }
+}
+
+document.querySelectorAll('input[name="role"]').forEach(r =>
+  r.addEventListener("change", updateDistanceUI)
+);
+document.getElementById("exceptionCheck").addEventListener("change", updateDistanceUI);
+
+// ---------- IC区間の結合（「乗IC～降IC」形式の文字列に） ----------
+function combineLeg(fromId, toId) {
+  const a = document.getElementById(fromId).value.trim();
+  const b = document.getElementById(toId).value.trim();
+  if (a && b) return `${a}～${b}`;
+  return a || b || "";
+}
+
+// ---------- 送信 ----------
+document.getElementById("reportForm").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const btn = document.getElementById("submitBtn");
+  const errorMsg = document.getElementById("errorMsg");
+  errorMsg.classList.add("hidden");
+
+  // 氏名の決定（LIFF取得 > 手入力）
+  const name = lineName || document.getElementById("manualName").value.trim();
+  if (!name) {
+    errorMsg.textContent = "氏名を取得できませんでした。LINEアプリ内から開くか、氏名を入力してください。";
+    errorMsg.classList.remove("hidden");
+    return;
+  }
+
+  // 現場（未選択=空欄でOK→取込側が氏名で自動判別）
+  const site = document.getElementById("siteSelect").value;
+
+  const role = getRole();
+  const distanceVisible = !document.getElementById("distanceWrap").classList.contains("hidden");
+
+  const payload = {
+    date: selectedDate,
+    site: site,
+    role: role,
+    distance: distanceVisible ? document.getElementById("distance").value : "",
+    parking: document.getElementById("parking").value.trim(),
+    icGo: combineLeg("icGoFrom", "icGoTo"),
+    icBack: combineLeg("icBackFrom", "icBackTo"),
+    name: name,
+    userId: lineUserId
+  };
+
+  btn.disabled = true;
+  btn.textContent = "送信中…";
+
+  try {
+    // Content-Typeをtext/plainにするとCORSプリフライトが発生せずGASに届く
+    const res = await fetch(GAS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload)
+    });
+    const json = await res.json();
+    if (json.status !== "ok") throw new Error(json.message || "GAS側でエラー");
+
+    // 完了画面へ
+    document.getElementById("reportForm").classList.add("hidden");
+    document.getElementById("doneView").classList.remove("hidden");
+
+    // LINE内なら2秒後に自動で閉じる
+    setTimeout(() => {
+      if (liff.isInClient && liff.isInClient()) liff.closeWindow();
+    }, 2000);
+  } catch (e) {
+    errorMsg.textContent = "送信に失敗しました。電波状況を確認してもう一度お試しください。(" + e.message + ")";
+    errorMsg.classList.remove("hidden");
+    btn.disabled = false;
+    btn.textContent = "送信する";
+  }
+});
+</script>
+</body>
+</html>
