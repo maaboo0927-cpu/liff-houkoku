@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>報告状況（管理者）</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+</head>
+<body class="bg-slate-100 min-h-screen">
+
+<div class="max-w-md mx-auto p-4 pb-10">
+
+  <div class="bg-indigo-600 text-white rounded-2xl p-4 mb-4 shadow">
+    <h1 class="text-lg font-bold">📊 業務報告 状況一覧</h1>
+    <p class="text-indigo-100 text-sm mt-1">直近7日間の報告状況（管理者用）</p>
+    <p id="genAt" class="text-indigo-200 text-xs mt-1"></p>
+  </div>
+
+  <!-- 読み込み中 -->
+  <div id="loading" class="bg-white rounded-2xl p-8 text-center shadow text-slate-500">
+    読み込み中…
+  </div>
+
+  <!-- 権限なし -->
+  <div id="forbidden" class="hidden bg-amber-50 border border-amber-300 rounded-2xl p-5 shadow">
+    <p class="font-bold text-amber-800 mb-2">⚠️ 管理者権限がありません</p>
+    <p class="text-sm text-amber-800 mb-3">管理者登録するには、スプレッドシートの「管理者」タブに下のIDを貼り付けてください。</p>
+    <div class="bg-white border border-amber-200 rounded-xl p-3 text-xs break-all select-all" id="myUserId"></div>
+    <button onclick="copyUserId()" class="mt-3 w-full bg-amber-500 text-white font-bold py-2.5 rounded-xl">IDをコピー</button>
+  </div>
+
+  <!-- エラー -->
+  <p id="errorMsg" class="hidden text-sm text-red-600 font-bold text-center"></p>
+
+  <!-- 本日の未報告 -->
+  <div id="missingCard" class="hidden bg-white rounded-2xl p-4 shadow mb-4">
+    <h2 class="font-bold text-slate-700 mb-2">🔔 本日まだ報告が無い人</h2>
+    <div id="missingList" class="flex flex-wrap gap-2"></div>
+    <p class="text-xs text-slate-400 mt-2">※名簿(乗務員名簿タブ)のリマインド対象者のうち、本日の報告が無い人。休みの人も含まれます。毎晩20時に自動リマインドが送られます。</p>
+  </div>
+
+  <!-- 日別リスト -->
+  <div id="dayList" class="space-y-3"></div>
+</div>
+
+<script>
+// ================================================================
+// ★設定（必ず書き換えてください）
+// ================================================================
+const ADMIN_LIFF_ID = "ここに管理者用LIFF IDを貼り付け"; // 報告フォームとは別のLIFFアプリ
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwSJG4teN2VjMjKkWUbgeh7O56n6flh9GHt7MmpTagf-Qz-ylyoA-ptNKJqSKqzEtKa5w/exec";   // 報告フォームと同じURL（2026-07-04 デプロイv1）
+// ================================================================
+
+const DOW = ["日","月","火","水","木","金","土"];
+
+window.addEventListener("DOMContentLoaded", async () => {
+  try {
+    await liff.init({ liffId: ADMIN_LIFF_ID });
+    if (!liff.isLoggedIn()) { liff.login(); return; }
+    const profile = await liff.getProfile();
+    const res = await fetch(`${GAS_URL}?action=status&days=7&userId=${encodeURIComponent(profile.userId)}`);
+    const json = await res.json();
+    document.getElementById("loading").classList.add("hidden");
+
+    if (json.status === "forbidden") {
+      document.getElementById("myUserId").textContent = profile.userId;
+      document.getElementById("forbidden").classList.remove("hidden");
+      return;
+    }
+    if (json.status !== "ok") throw new Error(json.message || "取得エラー");
+    render(json);
+  } catch (e) {
+    document.getElementById("loading").classList.add("hidden");
+    const el = document.getElementById("errorMsg");
+    el.textContent = "読み込みに失敗しました (" + e.message + ")";
+    el.classList.remove("hidden");
+  }
+});
+
+function render(data) {
+  document.getElementById("genAt").textContent = `更新: ${data.generated} / 名簿 ${data.rosterCount}名`;
+
+  // 本日の未報告
+  const mc = document.getElementById("missingCard");
+  const ml = document.getElementById("missingList");
+  mc.classList.remove("hidden");
+  if (!data.todayMissing || data.todayMissing.length === 0) {
+    ml.innerHTML = '<span class="text-emerald-600 font-bold text-sm">全員報告済み 🎉</span>';
+  } else {
+    data.todayMissing.forEach(n => {
+      const chip = document.createElement("span");
+      chip.className = "bg-red-50 text-red-700 border border-red-200 rounded-full px-3 py-1 text-sm font-bold";
+      chip.textContent = n;
+      ml.appendChild(chip);
+    });
+  }
+
+  // 日別
+  const wrap = document.getElementById("dayList");
+  data.days.forEach((d, idx) => {
+    const dt = new Date(d.date + "T00:00:00");
+    const label = `${dt.getMonth()+1}/${dt.getDate()}（${DOW[dt.getDay()]}）` + (idx === 0 ? " 今日" : idx === 1 ? " 昨日" : "");
+    const card = document.createElement("div");
+    card.className = "bg-white rounded-2xl p-4 shadow";
+    let inner = `<div class="flex justify-between items-center mb-2">
+      <span class="font-bold text-slate-700">${label}</span>
+      <span class="text-xs ${d.entries.length ? 'text-emerald-600' : 'text-slate-400'} font-bold">${d.entries.length}件</span></div>`;
+    if (d.entries.length === 0) {
+      inner += `<p class="text-sm text-slate-400">報告なし</p>`;
+    } else {
+      inner += d.entries.map(en => {
+        const roleColor = en.role === "回送" ? "bg-sky-50 text-sky-700 border-sky-200" : "bg-emerald-50 text-emerald-700 border-emerald-200";
+        const detail = [
+          en.dist !== "" ? `${en.dist}km` : null,
+          en.parking !== "" ? `駐車${en.parking}円` : null
+        ].filter(Boolean).join(" / ");
+        return `<div class="flex items-start gap-2 py-1.5 border-b border-slate-100 last:border-0">
+          <span class="border rounded-full px-2 py-0.5 text-xs font-bold shrink-0 ${roleColor}">${en.role || "—"}</span>
+          <div class="min-w-0">
+            <p class="text-sm font-bold text-slate-700">${en.name}${detail ? ` <span class="font-normal text-slate-500">(${detail})</span>` : ""}</p>
+            <p class="text-xs text-slate-400 truncate">${en.site || "（現場未選択→自動判別）"}</p>
+          </div></div>`;
+      }).join("");
+    }
+    card.innerHTML = inner;
+    wrap.appendChild(card);
+  });
+}
+
+function copyUserId() {
+  const t = document.getElementById("myUserId").textContent;
+  navigator.clipboard && navigator.clipboard.writeText(t);
+}
+</script>
+</body>
+</html>
