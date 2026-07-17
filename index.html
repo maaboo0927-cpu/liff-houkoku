@@ -83,7 +83,6 @@
                 class="w-full border border-slate-300 rounded-xl px-3 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
           <option value="">読み込み中…</option>
         </select>
-        <p class="text-xs text-slate-400 mt-1">未選択でも送信できます（氏名から自動判別）。<br>⚠️ 同じ日に2現場以上入った日は必ず選択してください</p>
       </div>
     </div>
 
@@ -136,6 +135,35 @@
                  class="w-full border border-slate-300 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500">
         </div>
       </div>
+
+      <!-- 乗入れ回数（首都高・西メンテ・東メンテ選択時のみ表示） -->
+      <div id="tollWrap" class="hidden bg-sky-50 border border-sky-200 rounded-xl p-3">
+        <label class="block text-sm font-bold text-sky-800 mb-1">首都高 乗入れ回数（回） <span class="text-xs font-normal text-sky-500">（首都高・西/東メンテのみ）</span></label>
+        <input type="number" id="tollEntries" inputmode="numeric" min="0" step="1" placeholder="例：2"
+               class="w-full border border-sky-300 rounded-xl px-3 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500">
+        <p class="text-xs text-sky-500 mt-1">首都高に乗り入れた回数を入力してください（料金請求に使用）。</p>
+      </div>
+    </div>
+
+    <!-- 乗合（同乗）＋備考（自由記入） -->
+    <div class="bg-white rounded-2xl p-4 shadow space-y-3">
+      <!-- 乗合トグルボタン -->
+      <div>
+        <label class="block text-sm font-bold text-slate-700 mb-2">乗合（同乗）</label>
+        <button type="button" id="carpoolBtn" onclick="toggleCarpool()"
+                class="w-full border-2 border-slate-200 rounded-xl py-3 text-center font-bold text-slate-500 active:scale-95 transition">
+          🚗 乗合あり
+        </button>
+        <p id="carpoolHint" class="hidden mt-2 text-sm font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
+          乗合者を備考に入力してください
+        </p>
+      </div>
+      <!-- 備考 -->
+      <div>
+        <label class="block text-sm font-bold text-slate-700 mb-1">備考 <span class="text-xs font-normal text-slate-400">（任意・自由記入）</span></label>
+        <textarea id="note" rows="3" placeholder="特記事項・立会・見習い・待機など"
+                  class="w-full border border-slate-300 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"></textarea>
+      </div>
     </div>
 
     <!-- LIFF外テスト用の氏名手入力（LIFF取得失敗時のみ表示） -->
@@ -158,7 +186,7 @@
 
 <script>
 // ================================================================
-// ★設定
+// ★設定（必ず書き換えてください）
 // ================================================================
 const LIFF_ID = "2010603519-ngr5AFYP";          // 業務報告LIFF（2026-07-04登録）
 const GAS_URL = "https://script.google.com/macros/s/AKfycbwSJG4teN2VjMjKkWUbgeh7O56n6flh9GHt7MmpTagf-Qz-ylyoA-ptNKJqSKqzEtKa5w/exec"; // 2026-07-04 デプロイv1
@@ -241,6 +269,7 @@ function renderCalendar() {
 window.addEventListener("DOMContentLoaded", async () => {
   updateDateUI();     // 日付は「本日」がデフォルト
   updateDistanceUI(); // 初期表示（回送がデフォルト）
+  updateTollUI();     // 乗入れ回数欄は初期は非表示
   loadSites();        // 今日のカレンダー案件を読み込み
 
   // LIFF初期化 → プロフィール取得
@@ -284,6 +313,7 @@ async function loadSites() {
     sel.innerHTML = "";
     sel.appendChild(new Option("― 取得できませんでした（未選択で送信可）―", ""));
   }
+  updateTollUI(); // 現場が変わったら乗入れ回数欄の表示を更新
 }
 
 // ---------- UIの動的切り替え ----------
@@ -322,6 +352,36 @@ document.querySelectorAll('input[name="role"]').forEach(r =>
 );
 document.getElementById("exceptionCheck").addEventListener("change", updateDistanceUI);
 
+// ---------- 乗入れ回数（首都高・西/東メンテ選択時のみ表示） ----------
+function siteNeedsToll() {
+  const s = document.getElementById("siteSelect").value || "";
+  return /首都高|西メンテ|東メンテ/.test(s);
+}
+function updateTollUI() {
+  const show = siteNeedsToll();
+  document.getElementById("tollWrap").classList.toggle("hidden", !show);
+  if (!show) document.getElementById("tollEntries").value = ""; // 非表示時はクリア（誤送信防止）
+}
+document.getElementById("siteSelect").addEventListener("change", updateTollUI);
+
+// ---------- 乗合（同乗）トグル ----------
+let carpool = false;
+function toggleCarpool() {
+  carpool = !carpool;
+  const btn = document.getElementById("carpoolBtn");
+  const hint = document.getElementById("carpoolHint");
+  if (carpool) {
+    btn.className = "w-full border-2 border-emerald-500 bg-emerald-50 text-emerald-700 rounded-xl py-3 text-center font-bold active:scale-95 transition";
+    btn.textContent = "🚗 乗合あり（ON）";
+    hint.classList.remove("hidden");
+    document.getElementById("note").focus();   // 備考へ誘導
+  } else {
+    btn.className = "w-full border-2 border-slate-200 rounded-xl py-3 text-center font-bold text-slate-500 active:scale-95 transition";
+    btn.textContent = "🚗 乗合あり";
+    hint.classList.add("hidden");
+  }
+}
+
 // ---------- IC区間の結合（「乗IC～降IC」形式の文字列に） ----------
 function combineLeg(fromId, toId) {
   const a = document.getElementById(fromId).value.trim();
@@ -350,6 +410,17 @@ document.getElementById("reportForm").addEventListener("submit", async (ev) => {
 
   const role = getRole();
   const distanceVisible = !document.getElementById("distanceWrap").classList.contains("hidden");
+  const tollVisible = !document.getElementById("tollWrap").classList.contains("hidden");
+
+  // 乗合ONなら備考必須（乗合者名を備考へ）＋【乗合】を前置
+  let note = document.getElementById("note").value.trim();
+  if (carpool && !note) {
+    errorMsg.textContent = "乗合者を備考に入力してください";
+    errorMsg.classList.remove("hidden");
+    document.getElementById("note").focus();
+    return;
+  }
+  if (carpool && !/^【乗合】/.test(note)) note = "【乗合】" + note;
 
   const payload = {
     date: selectedDate,
@@ -359,6 +430,9 @@ document.getElementById("reportForm").addEventListener("submit", async (ev) => {
     parking: document.getElementById("parking").value.trim(),
     icGo: combineLeg("icGoFrom", "icGoTo"),
     icBack: combineLeg("icBackFrom", "icBackTo"),
+    tollEntries: tollVisible ? document.getElementById("tollEntries").value.trim() : "",
+    note: note,
+    carpool: carpool,
     name: name,
     userId: lineUserId
   };
