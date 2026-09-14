@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>業務報告フォーム</title>
+<title>業務報告</title>
 <!-- Tailwind CSS -->
 <script src="https://cdn.tailwindcss.com"></script>
 <!-- LIFF SDK -->
 <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 <style>
   /* iOSでinputが16px未満だとズームされるのを防止 */
-  input, select { font-size: 16px; }
+  input, select, textarea { font-size: 16px; }
 </style>
 </head>
 <body class="bg-slate-100 min-h-screen">
@@ -19,20 +19,96 @@
 
   <!-- ヘッダー -->
   <div class="bg-emerald-600 text-white rounded-2xl p-4 mb-4 shadow">
-    <h1 class="text-lg font-bold">📋 業務報告</h1>
-    <p class="text-emerald-100 text-sm mt-1">本日の稼働内容を報告してください</p>
+    <div class="flex items-baseline justify-between">
+      <h1 class="text-lg font-bold">📋 業務報告</h1>
+      <span id="clock" class="text-2xl font-bold tabular-nums">--:--</span>
+    </div>
+    <p id="headSub" class="text-emerald-100 text-sm mt-1"></p>
     <p id="profileName" class="text-sm mt-2 font-semibold hidden"></p>
   </div>
 
-  <!-- 送信完了画面（初期は非表示） -->
-  <div id="doneView" class="hidden bg-white rounded-2xl p-8 text-center shadow">
-    <div class="text-5xl mb-3">✅</div>
-    <p class="text-lg font-bold text-slate-800">送信しました</p>
-    <p class="text-sm text-slate-500 mt-2">お疲れさまでした。<br>この画面は自動で閉じます。</p>
+  <!-- 読み込み中 -->
+  <div id="loadingView" class="bg-white rounded-2xl p-8 text-center shadow">
+    <p class="text-slate-400 text-sm">読み込み中…</p>
   </div>
 
-  <!-- フォーム本体 -->
-  <form id="reportForm" class="space-y-4">
+  <!-- ===== 送信完了 ===== -->
+  <div id="doneView" class="hidden bg-white rounded-2xl p-8 text-center shadow">
+    <div class="text-5xl mb-3">✅</div>
+    <p id="doneText" class="text-lg font-bold text-slate-800"></p>
+    <p id="doneSub" class="text-sm text-slate-600 mt-2"></p>
+    <p id="doneWarn" class="hidden text-sm text-red-600 font-bold mt-3"></p>
+    <p class="text-sm text-slate-400 mt-3">お疲れさまでした。<br>この画面は自動で閉じます。</p>
+  </div>
+
+  <!-- ===== 事務所モード（西村・光栄）＝打刻だけ ===== -->
+  <div id="jimuView" class="hidden">
+    <div class="bg-white rounded-2xl p-4 shadow mb-4">
+      <div class="grid grid-cols-2 gap-3 text-center">
+        <div class="bg-slate-50 rounded-xl py-3">
+          <p class="text-xs text-slate-400 font-bold">出勤</p>
+          <p id="jIn" class="text-2xl font-bold text-slate-800 tabular-nums">—</p>
+        </div>
+        <div class="bg-slate-50 rounded-xl py-3">
+          <p class="text-xs text-slate-400 font-bold">退勤</p>
+          <p id="jOut" class="text-2xl font-bold text-slate-800 tabular-nums">—</p>
+        </div>
+      </div>
+    </div>
+    <button type="button" id="jBtnIn" onclick="punchOnly('in','事務所')"
+            class="w-full bg-emerald-600 active:scale-95 transition text-white font-bold py-6 rounded-2xl shadow-lg text-2xl mb-3 disabled:bg-slate-300">出勤</button>
+    <button type="button" id="jBtnOut" onclick="punchOnly('out','事務所')"
+            class="w-full bg-orange-600 active:scale-95 transition text-white font-bold py-6 rounded-2xl shadow-lg text-2xl mb-4 disabled:bg-slate-300">退勤</button>
+    <p id="jError" class="hidden text-sm text-red-600 font-bold text-center mb-3"></p>
+    <button type="button" onclick="openFix()" class="w-full text-sm text-slate-500 underline py-2">押し忘れ・時刻の手直し</button>
+    <button type="button" onclick="switchToGenba()" class="w-full text-sm text-slate-400 underline py-1">現場に出たので業務報告する</button>
+  </div>
+
+  <!-- ===== 朝：出勤モード ===== -->
+  <div id="inView" class="hidden">
+    <div class="bg-white rounded-2xl p-4 shadow mb-4">
+      <label class="block text-sm font-bold text-slate-700 mb-1">本日の現場（案件）</label>
+      <p class="text-xs text-slate-400 mb-2">選ぶと昼勤・夜勤が案件の時刻どおりに記録され、帰りの報告にも引き継がれます。</p>
+      <select id="inSite" onchange="renderSiteHint()"
+              class="w-full border border-slate-300 rounded-xl px-3 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+        <option value="">読み込み中…</option>
+      </select>
+      <p id="siteHint" class="hidden mt-2 text-sm font-bold px-3 py-2 rounded-xl"></p>
+    </div>
+
+    <button type="button" id="btnIn" onclick="punchOnly('in','現場')"
+            class="w-full bg-emerald-600 active:scale-95 transition text-white font-bold py-6 rounded-2xl shadow-lg text-2xl mb-4 disabled:bg-slate-300">
+      出勤
+    </button>
+    <p id="inError" class="hidden text-sm text-red-600 font-bold text-center mb-3"></p>
+
+    <button type="button" onclick="switchToJimu()" class="w-full text-sm text-slate-500 underline py-2">🏢 今日は事務所勤務（案件なしで打刻する）</button>
+    <button type="button" onclick="showReportOnly()" class="w-full text-sm text-slate-500 underline py-2">出勤を押さずに報告だけ送る（後追い報告）</button>
+    <button type="button" onclick="openFix()" class="w-full text-sm text-slate-400 underline py-1">押し忘れ・時刻の手直し</button>
+  </div>
+
+  <!-- ===== 本日完了 ===== -->
+  <div id="finView" class="hidden">
+    <div class="bg-white rounded-2xl p-6 text-center shadow mb-4">
+      <div class="text-4xl mb-2">🏁</div>
+      <p class="text-lg font-bold text-slate-800">本日は退勤済みです</p>
+      <p id="finSub" class="text-sm text-slate-500 mt-2"></p>
+    </div>
+    <button type="button" onclick="showReportOnly()"
+            class="w-full border-2 border-emerald-600 text-emerald-700 bg-white font-bold py-4 rounded-2xl mb-3">報告を追加で送る</button>
+    <button type="button" onclick="openFix()" class="w-full text-sm text-slate-500 underline py-2">押し忘れ・時刻の手直し</button>
+    <button type="button" onclick="startNextShift()" class="w-full text-sm text-slate-400 underline py-1">これから夜勤に入る（もう一度出勤する）</button>
+  </div>
+
+  <!-- ===== 夕：退勤＋報告モード／後追い報告モード（共通フォーム） ===== -->
+  <form id="reportForm" class="hidden space-y-4">
+
+    <!-- 出勤中バナー -->
+    <div id="openBanner" class="hidden bg-slate-800 text-white rounded-2xl p-4 shadow">
+      <p class="text-xs text-slate-300 font-bold">出勤中</p>
+      <p id="openLine" class="text-lg font-bold tabular-nums mt-1"></p>
+      <p id="openSite" class="text-sm text-slate-200 mt-1"></p>
+    </div>
 
     <!-- 1. 本日の担当業務 -->
     <div class="bg-white rounded-2xl p-4 shadow">
@@ -53,9 +129,9 @@
       </div>
     </div>
 
-    <!-- 日付・現場（カレンダー案件から選択） -->
+    <!-- 日付・現場 -->
     <div class="bg-white rounded-2xl p-4 shadow space-y-4">
-      <div>
+      <div id="dateWrap">
         <label class="block text-sm font-bold text-slate-700 mb-1">日付 <span class="text-red-500">*</span></label>
         <div class="grid grid-cols-2 gap-3 mb-2">
           <button type="button" id="dateTodayBtn" onclick="setDateMode('today')"
@@ -64,7 +140,7 @@
                   class="border-2 rounded-xl py-2.5 text-center font-bold text-sm">それ以外</button>
         </div>
         <p id="dateLabel" class="text-sm font-bold text-emerald-700"></p>
-        <!-- 簡易カレンダー（「それ以外」選択時のみ表示） -->
+        <!-- 簡易カレンダー -->
         <div id="calWrap" class="hidden mt-2 border border-slate-200 rounded-xl p-3 bg-slate-50">
           <div class="flex items-center justify-between mb-2">
             <button type="button" onclick="moveMonth(-1)" class="w-9 h-9 rounded-lg border border-slate-200 bg-white text-slate-500 font-bold">‹</button>
@@ -77,25 +153,26 @@
           <div id="calGrid" class="grid grid-cols-7 gap-1 text-center"></div>
         </div>
       </div>
+      <!-- 出勤中は日付を出勤日に固定して表示だけする -->
+      <p id="fixedDate" class="hidden text-sm font-bold text-emerald-700"></p>
+
       <div>
         <label class="block text-sm font-bold text-slate-700 mb-1">現場（案件を選択）</label>
-        <select id="siteSelect"
+        <select id="siteSelect" onchange="updateTollUI()"
                 class="w-full border border-slate-300 rounded-xl px-3 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
           <option value="">読み込み中…</option>
         </select>
       </div>
     </div>
 
-    <!-- 2. 距離ブロック（動的表示） -->
+    <!-- 2. 距離ブロック -->
     <div class="bg-white rounded-2xl p-4 shadow space-y-3">
-      <!-- OP選択時のみ表示される例外チェック -->
       <div id="exceptionWrap" class="hidden">
         <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
           <input type="checkbox" id="exceptionCheck" class="w-5 h-5 accent-emerald-600">
           <span>☑ 例外として距離を報告する</span>
         </label>
       </div>
-
       <div id="distanceWrap">
         <label class="block text-sm font-bold text-slate-700 mb-1">
           距離(km) <span id="distanceRequiredMark" class="text-red-500">*</span>
@@ -105,15 +182,13 @@
       </div>
     </div>
 
-    <!-- 駐車料金・IC（行き/帰り 区間入力） -->
+    <!-- 駐車料金・IC -->
     <div class="bg-white rounded-2xl p-4 shadow space-y-4">
       <div>
         <label class="block text-sm font-bold text-slate-700 mb-1">駐車料金（円） <span class="text-xs font-normal text-slate-400">（払った場合のみ）</span></label>
         <input type="number" id="parking" inputmode="numeric" min="0" step="1" placeholder="例：800"
                class="w-full border border-slate-300 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500">
       </div>
-
-      <!-- 3. IC 行き（乗ったIC 〜 降りたIC） -->
       <div>
         <label class="block text-sm font-bold text-slate-700 mb-1">使用IC（行き） <span class="text-xs font-normal text-slate-400">（使ってなければ空欄）</span></label>
         <div class="flex items-center gap-2">
@@ -124,7 +199,6 @@
                  class="w-full border border-slate-300 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500">
         </div>
       </div>
-      <!-- IC 帰り -->
       <div>
         <label class="block text-sm font-bold text-slate-700 mb-1">使用IC（帰り）</label>
         <div class="flex items-center gap-2">
@@ -135,8 +209,6 @@
                  class="w-full border border-slate-300 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500">
         </div>
       </div>
-
-      <!-- 乗入れ回数（首都高・西メンテ・東メンテ選択時のみ表示） -->
       <div id="tollWrap" class="hidden bg-sky-50 border border-sky-200 rounded-xl p-3">
         <label class="block text-sm font-bold text-sky-800 mb-1">首都高 乗入れ回数（回） <span class="text-xs font-normal text-sky-500">（首都高・西/東メンテのみ）</span></label>
         <input type="number" id="tollEntries" inputmode="numeric" min="0" step="1" placeholder="例：2"
@@ -145,9 +217,8 @@
       </div>
     </div>
 
-    <!-- 乗合（同乗）＋備考（自由記入） -->
+    <!-- 乗合＋備考 -->
     <div class="bg-white rounded-2xl p-4 shadow space-y-3">
-      <!-- 乗合トグルボタン -->
       <div>
         <label class="block text-sm font-bold text-slate-700 mb-2">乗合（同乗）</label>
         <button type="button" id="carpoolBtn" onclick="toggleCarpool()"
@@ -158,7 +229,6 @@
           乗合者を備考に入力してください
         </p>
       </div>
-      <!-- 備考 -->
       <div>
         <label class="block text-sm font-bold text-slate-700 mb-1">備考 <span class="text-xs font-normal text-slate-400">（自由記入）</span></label>
         <textarea id="note" rows="3" placeholder="特記事項／乗合の場合は同乗者の氏名を入力"
@@ -166,55 +236,252 @@
       </div>
     </div>
 
-    <!-- LIFF外テスト用の氏名手入力（LIFF取得失敗時のみ表示） -->
+    <!-- LIFF外テスト用 -->
     <div id="manualNameWrap" class="hidden bg-amber-50 border border-amber-300 rounded-2xl p-4">
       <label class="block text-sm font-bold text-amber-800 mb-1">氏名（LINE名を取得できなかったため手入力）</label>
       <input type="text" id="manualName" placeholder="例：山田 太郎"
              class="w-full border border-amber-300 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-amber-500">
     </div>
 
-    <!-- エラー表示 -->
     <p id="errorMsg" class="hidden text-sm text-red-600 font-bold text-center"></p>
 
-    <!-- 送信ボタン -->
+    <!-- 送信ボタン（モードで文言が変わる） -->
     <button type="submit" id="submitBtn"
-            class="w-full bg-emerald-600 hover:bg-emerald-700 active:scale-95 transition text-white font-bold py-4 rounded-2xl shadow-lg text-lg disabled:bg-slate-400 disabled:cursor-not-allowed">
-      送信する
+            class="w-full bg-orange-600 active:scale-95 transition text-white font-bold py-5 rounded-2xl shadow-lg text-xl disabled:bg-slate-400 disabled:cursor-not-allowed">
+      退勤して報告する
     </button>
+    <button type="button" id="outOnlyBtn" onclick="punchOnly('out','現場')"
+            class="hidden w-full border-2 border-slate-300 bg-white text-slate-600 font-bold py-3 rounded-2xl">
+      報告はあとで（退勤だけする）
+    </button>
+    <button type="button" id="backBtn" onclick="render()" class="hidden w-full text-sm text-slate-500 underline py-2">もどる</button>
   </form>
+
+  <!-- ===== 手直し画面 ===== -->
+  <div id="fixView" class="hidden">
+    <div class="bg-white rounded-2xl p-4 shadow mb-4">
+      <p class="text-sm font-bold text-slate-700 mb-1">直近14日の打刻</p>
+      <p class="text-xs text-slate-400">時刻を直して「保存」。押し忘れた日は「この日を追加」から。</p>
+    </div>
+    <div id="fixList" class="space-y-3"></div>
+    <p id="fixError" class="hidden text-sm text-red-600 font-bold text-center my-3"></p>
+    <button type="button" onclick="closeFix()"
+            class="w-full mt-4 border-2 border-slate-300 bg-white text-slate-600 font-bold py-3 rounded-2xl">もどる</button>
+  </div>
+
 </div>
 
 <script>
 // ================================================================
 // ★設定（必ず書き換えてください）
 // ================================================================
-const LIFF_ID = "2010603519-ngr5AFYP";          // 業務報告LIFF（2026-07-04登録）
-const GAS_URL = "https://script.google.com/macros/s/AKfycbwSJG4teN2VjMjKkWUbgeh7O56n6flh9GHt7MmpTagf-Qz-ylyoA-ptNKJqSKqzEtKa5w/exec"; // 2026-07-04 デプロイv1
+const LIFF_ID = "2010603519-ngr5AFYP";          // 業務報告LIFF（2026-07-04登録・そのまま使う）
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwSJG4teN2VjMjKkWUbgeh7O56n6flh9GHt7MmpTagf-Qz-ylyoA-ptNKJqSKqzEtKa5w/exec";
 // ================================================================
 
-let lineName = "";   // liff.getProfile() で取得したLINE表示名
-let lineUserId = ""; // LINE userId（名簿・リマインド用に自動収集）
+let lineName = "", lineUserId = "";
+let state = null;        // GASから取得した打刻の状態
+let events = [];         // 選択中の日付のカレンダー案件
+let mode = "loading";    // loading / jimu / in / out / report / fin
+let forcedGenba = false; // 事務所の人が「現場に出た」を選んだ
+let forcedJimu  = false; // 名簿未登録の人が自分で「事務所勤務」を選んだ（初回打刻で名簿に事務所として登録される）
 
-// ---------- 日付（本日/それ以外＋簡易カレンダー） ----------
 const DOW_JA = ["日","月","火","水","木","金","土"];
+
 function fmtDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 const TODAY_STR = fmtDate(TODAY);
-let selectedDate = TODAY_STR;   // 送信・案件取得に使う日付
+let selectedDate = TODAY_STR;
 let dateMode = "today";
 let calY = TODAY.getFullYear(), calM = TODAY.getMonth();
 
-function setDateMode(mode) {
-  dateMode = mode;
-  if (mode === "today") {
-    selectedDate = TODAY_STR;
-    calY = TODAY.getFullYear(); calM = TODAY.getMonth();
+function tickClock() {
+  const d = new Date();
+  document.getElementById("clock").textContent =
+    String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
+}
+setInterval(tickClock, 10000);
+
+// ---------- 初期化 ----------
+window.addEventListener("DOMContentLoaded", async () => {
+  tickClock();
+  document.getElementById("headSub").textContent =
+    `${TODAY.getFullYear()}年${TODAY.getMonth()+1}月${TODAY.getDate()}日（${DOW_JA[TODAY.getDay()]}）`;
+
+  try {
+    await liff.init({ liffId: LIFF_ID });
+    if (!liff.isLoggedIn()) { liff.login(); return; }
+    const p = await liff.getProfile();
+    lineName = p.displayName;
+    lineUserId = p.userId || "";
+    const el = document.getElementById("profileName");
+    el.textContent = `👤 ${lineName} さん`;
+    el.classList.remove("hidden");
+  } catch (e) {
+    console.warn("LIFF init failed:", e);
+    document.getElementById("manualNameWrap").classList.remove("hidden");
   }
+
+  await loadState();
+  await render();
+});
+
+async function loadState() {
+  if (!lineUserId) { state = { status:"ok", date:TODAY_STR, today:{}, open:null, kubun:"" }; return; }
+  try {
+    const res = await fetch(`${GAS_URL}?action=kintai_status&userId=${encodeURIComponent(lineUserId)}`);
+    const j = await res.json();
+    state = (j.status === "ok") ? j : { status:"ok", date:TODAY_STR, today:{}, open:null, kubun:"" };
+  } catch (e) {
+    console.warn("status fetch failed:", e);
+    state = { status:"ok", date:TODAY_STR, today:{}, open:null, kubun:"" };
+  }
+}
+
+// ---------- 画面の出し分け ----------
+function show(id) {
+  ["loadingView","doneView","jimuView","inView","finView","reportForm","fixView"]
+    .forEach(k => document.getElementById(k).classList.toggle("hidden", k !== id));
+}
+
+async function render() {
+  const isJimu = forcedJimu || ((state.kubun === "事務所") && !forcedGenba);
+
+  if (isJimu) {
+    mode = "jimu";
+    document.getElementById("jIn").textContent  = (state.open && state.open.in) || (state.today.in || "—");
+    document.getElementById("jOut").textContent = (!state.open && state.today.out) ? state.today.out : "—";
+    document.getElementById("jBtnIn").disabled  = !!state.open;
+    document.getElementById("jBtnOut").disabled = !state.open;
+    show("jimuView");
+    return;
+  }
+
+  if (state.open) {                      // 出勤中 → 退勤＋報告
+    mode = "out";
+    selectedDate = state.open.date;      // ★報告日は出勤日。日跨ぎ夜勤でも前日扱いにならない
+    await enterReportForm(true);
+    return;
+  }
+  if (state.today && state.today.out) {  // 本日退勤済み
+    mode = "fin";
+    document.getElementById("finSub").textContent =
+      `${state.today.in} 〜 ${state.today.out}` + (state.today.site ? ` / ${state.today.site}` : "");
+    show("finView");
+    return;
+  }
+  mode = "in";                           // 未出勤 → 朝の出勤画面
+  await loadEvents(TODAY_STR, "inSite");
+  show("inView");
+}
+
+function switchToGenba() { forcedGenba = true; forcedJimu = false; render(); }
+function switchToJimu()  { forcedJimu = true;  forcedGenba = false; render(); }
+function startNextShift() { state.today = {}; state.open = null; render(); }
+async function showReportOnly() {
+  mode = "report";
+  selectedDate = TODAY_STR; dateMode = "today";
+  await enterReportForm(false);
+}
+
+// ---------- カレンダー案件（開始時刻つき） ----------
+async function loadEvents(dateStr, selectId) {
+  const sel = document.getElementById(selectId);
+  sel.innerHTML = '<option value="">読み込み中…</option>';
+  try {
+    const res = await fetch(`${GAS_URL}?action=kintai_events&date=${dateStr}`);
+    const json = await res.json();
+    events = (json.status === "ok") ? (json.events || []) : [];
+  } catch (e) {
+    console.warn("events fetch failed:", e);
+    events = [];
+  }
+  sel.innerHTML = "";
+  if (events.length === 0) {
+    sel.appendChild(new Option("― この日の案件がありません（未選択で送信可）―", ""));
+  } else {
+    sel.appendChild(new Option("案件を選択してください", ""));
+    events.forEach(ev => {
+      const label = (ev.start ? ev.start + "  " : "終日  ") + ev.title;
+      sel.appendChild(new Option(label, ev.title));   // ★値はタイトルのみ（従来の報告と同じ形）
+    });
+    if (selectId === "inSite" && events.length === 1) sel.value = events[0].title;
+  }
+  if (selectId === "inSite") renderSiteHint();
+}
+
+function eventByTitle(t) {
+  for (const ev of events) if (ev.title === t) return ev;
+  return null;
+}
+
+function renderSiteHint() {
+  const hint = document.getElementById("siteHint");
+  const ev = eventByTitle(document.getElementById("inSite").value);
+  if (!ev) { hint.classList.add("hidden"); return; }
+  if (ev.dn === "N") {
+    hint.textContent = "🌙 夜勤として記録します（" + (ev.start || "終日") + " 開始）";
+    hint.className = "mt-2 text-sm font-bold px-3 py-2 rounded-xl text-indigo-800 bg-indigo-50 border border-indigo-200";
+  } else if (ev.dn === "D") {
+    hint.textContent = "☀ 昼勤として記録します（" + ev.start + " 開始）";
+    hint.className = "mt-2 text-sm font-bold px-3 py-2 rounded-xl text-amber-800 bg-amber-50 border border-amber-200";
+  } else {
+    hint.textContent = "終日の案件のため、押した時刻で昼夜を判定します";
+    hint.className = "mt-2 text-sm font-bold px-3 py-2 rounded-xl text-slate-600 bg-slate-100 border border-slate-200";
+  }
+  hint.classList.remove("hidden");
+}
+
+// ---------- 報告フォームへ入る ----------
+async function enterReportForm(withPunchOut) {
+  const banner = document.getElementById("openBanner");
+  const dateWrap = document.getElementById("dateWrap");
+  const fixedDate = document.getElementById("fixedDate");
+  const submit = document.getElementById("submitBtn");
+  const outOnly = document.getElementById("outOnlyBtn");
+  const back = document.getElementById("backBtn");
+
+  if (withPunchOut) {
+    const o = state.open;
+    banner.classList.remove("hidden");
+    document.getElementById("openLine").textContent =
+      `${o.date} ${o.in} 〜  ${o.dn === "N" ? "🌙 夜勤" : "☀ 昼勤"}`;
+    document.getElementById("openSite").textContent = o.site || "（案件未選択）";
+    dateWrap.classList.add("hidden");
+    const d = new Date(o.date + "T00:00:00");
+    fixedDate.textContent = `報告日: ${d.getMonth()+1}/${d.getDate()}（${DOW_JA[d.getDay()]}）— 出勤した日`;
+    fixedDate.classList.remove("hidden");
+    submit.textContent = "退勤して報告する";
+    submit.className = "w-full bg-orange-600 active:scale-95 transition text-white font-bold py-5 rounded-2xl shadow-lg text-xl disabled:bg-slate-400";
+    outOnly.classList.remove("hidden");
+    back.classList.add("hidden");
+  } else {
+    banner.classList.add("hidden");
+    dateWrap.classList.remove("hidden");
+    fixedDate.classList.add("hidden");
+    submit.textContent = "送信する";
+    submit.className = "w-full bg-emerald-600 active:scale-95 transition text-white font-bold py-5 rounded-2xl shadow-lg text-xl disabled:bg-slate-400";
+    outOnly.classList.add("hidden");
+    back.classList.remove("hidden");
+    updateDateUI();
+  }
+
+  show("reportForm");
+  updateDistanceUI();
+  await loadEvents(selectedDate, "siteSelect");
+  if (withPunchOut && state.open.site) document.getElementById("siteSelect").value = state.open.site;
+  updateTollUI();
+}
+
+// ---------- 日付（後追い報告のときだけ使う） ----------
+function setDateMode(m) {
+  dateMode = m;
+  if (m === "today") { selectedDate = TODAY_STR; calY = TODAY.getFullYear(); calM = TODAY.getMonth(); }
   updateDateUI();
-  if (mode === "other") renderCalendar();
-  loadSites();
+  if (m === "other") renderCalendar();
+  loadEvents(selectedDate, "siteSelect").then(updateTollUI);
 }
 
 function updateDateUI() {
@@ -238,7 +505,6 @@ function moveMonth(diff) {
 
 function renderCalendar() {
   document.getElementById("calTitle").textContent = `${calY}年${calM+1}月`;
-  // 未来の月へは進めない
   document.getElementById("calNextBtn").disabled =
     (calY > TODAY.getFullYear()) || (calY === TODAY.getFullYear() && calM >= TODAY.getMonth());
   const grid = document.getElementById("calGrid");
@@ -252,74 +518,19 @@ function renderCalendar() {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.textContent = day;
-    if (d > TODAY) {                     // 未来日は選択不可
-      btn.className = "py-1.5 rounded-lg text-sm text-slate-300";
-      btn.disabled = true;
-    } else if (ds === selectedDate) {    // 選択中
-      btn.className = "py-1.5 rounded-lg text-sm font-bold bg-emerald-600 text-white";
-    } else {
-      btn.className = "py-1.5 rounded-lg text-sm text-slate-700 active:bg-emerald-100";
-    }
-    btn.onclick = () => { selectedDate = ds; updateDateUI(); renderCalendar(); loadSites(); };
+    if (d > TODAY) { btn.className = "py-1.5 rounded-lg text-sm text-slate-300"; btn.disabled = true; }
+    else if (ds === selectedDate) { btn.className = "py-1.5 rounded-lg text-sm font-bold bg-emerald-600 text-white"; }
+    else { btn.className = "py-1.5 rounded-lg text-sm text-slate-700 active:bg-emerald-100"; }
+    btn.onclick = () => {
+      selectedDate = ds; updateDateUI(); renderCalendar();
+      loadEvents(selectedDate, "siteSelect").then(updateTollUI);
+    };
     grid.appendChild(btn);
   }
 }
 
-// ---------- 初期化 ----------
-window.addEventListener("DOMContentLoaded", async () => {
-  updateDateUI();     // 日付は「本日」がデフォルト
-  updateDistanceUI(); // 初期表示（回送がデフォルト）
-  updateTollUI();     // 乗入れ回数欄は初期は非表示
-  loadSites();        // 今日のカレンダー案件を読み込み
-
-  // LIFF初期化 → プロフィール取得
-  try {
-    await liff.init({ liffId: LIFF_ID });
-    if (!liff.isLoggedIn()) {
-      liff.login(); // 外部ブラウザで開いた場合はLINEログインへ
-      return;
-    }
-    const profile = await liff.getProfile();
-    lineName = profile.displayName;
-    lineUserId = profile.userId || "";
-    const p = document.getElementById("profileName");
-    p.textContent = `👤 ${lineName} さん`;
-    p.classList.remove("hidden");
-  } catch (e) {
-    // LIFF外（PCブラウザ等）でのテスト用フォールバック
-    console.warn("LIFF init failed:", e);
-    document.getElementById("manualNameWrap").classList.remove("hidden");
-  }
-});
-
-// ---------- カレンダー案件の読み込み（現場プルダウン） ----------
-async function loadSites() {
-  const date = selectedDate;
-  const sel = document.getElementById("siteSelect");
-  sel.innerHTML = '<option value="">読み込み中…</option>';
-  try {
-    const res = await fetch(`${GAS_URL}?action=events&date=${date}`);
-    const json = await res.json();
-    const events = json.events || [];
-    sel.innerHTML = "";
-    if (events.length === 0) {
-      sel.appendChild(new Option("― この日の案件がありません（未選択で送信可）―", ""));
-    } else {
-      sel.appendChild(new Option("案件を選択してください", ""));
-      events.forEach(t => sel.appendChild(new Option(t, t)));
-    }
-  } catch (e) {
-    console.warn("events fetch failed:", e);
-    sel.innerHTML = "";
-    sel.appendChild(new Option("― 取得できませんでした（未選択で送信可）―", ""));
-  }
-  updateTollUI(); // 現場が変わったら乗入れ回数欄の表示を更新
-}
-
-// ---------- UIの動的切り替え ----------
-function getRole() {
-  return document.querySelector('input[name="role"]:checked').value;
-}
+// ---------- UIの動的切り替え（従来どおり） ----------
+function getRole() { return document.querySelector('input[name="role"]:checked').value; }
 
 function updateDistanceUI() {
   const role = getRole();
@@ -330,41 +541,33 @@ function updateDistanceUI() {
   const mark = document.getElementById("distanceRequiredMark");
 
   if (role === "回送") {
-    // 回送：距離を表示＆必須。例外チェックは不要なので隠す
     exceptionWrap.classList.add("hidden");
     exceptionCheck.checked = false;
     distanceWrap.classList.remove("hidden");
     distance.required = true;
     mark.classList.remove("hidden");
   } else {
-    // OP：基本は距離非表示。例外チェックONの時だけ表示
     exceptionWrap.classList.remove("hidden");
-    const show = exceptionCheck.checked;
-    distanceWrap.classList.toggle("hidden", !show);
-    distance.required = show; // チェックして表示したなら入力必須
-    mark.classList.toggle("hidden", !show);
-    if (!show) distance.value = ""; // 非表示時は値をクリア（誤送信防止）
+    const showD = exceptionCheck.checked;
+    distanceWrap.classList.toggle("hidden", !showD);
+    distance.required = showD;
+    mark.classList.toggle("hidden", !showD);
+    if (!showD) distance.value = "";
   }
 }
-
-document.querySelectorAll('input[name="role"]').forEach(r =>
-  r.addEventListener("change", updateDistanceUI)
-);
+document.querySelectorAll('input[name="role"]').forEach(r => r.addEventListener("change", updateDistanceUI));
 document.getElementById("exceptionCheck").addEventListener("change", updateDistanceUI);
 
-// ---------- 乗入れ回数（首都高・西/東メンテ選択時のみ表示） ----------
 function siteNeedsToll() {
   const s = document.getElementById("siteSelect").value || "";
   return /首都高|西メンテ|東メンテ/.test(s);
 }
 function updateTollUI() {
-  const show = siteNeedsToll();
-  document.getElementById("tollWrap").classList.toggle("hidden", !show);
-  if (!show) document.getElementById("tollEntries").value = ""; // 非表示時はクリア（誤送信防止）
+  const showT = siteNeedsToll();
+  document.getElementById("tollWrap").classList.toggle("hidden", !showT);
+  if (!showT) document.getElementById("tollEntries").value = "";
 }
-document.getElementById("siteSelect").addEventListener("change", updateTollUI);
 
-// ---------- 乗合（同乗）トグル ----------
 let carpool = false;
 function toggleCarpool() {
   carpool = !carpool;
@@ -374,7 +577,7 @@ function toggleCarpool() {
     btn.className = "w-full border-2 border-emerald-500 bg-emerald-50 text-emerald-700 rounded-xl py-3 text-center font-bold active:scale-95 transition";
     btn.textContent = "🚗 乗合あり（ON）";
     hint.classList.remove("hidden");
-    document.getElementById("note").focus();   // 備考へ誘導
+    document.getElementById("note").focus();
   } else {
     btn.className = "w-full border-2 border-slate-200 rounded-xl py-3 text-center font-bold text-slate-500 active:scale-95 transition";
     btn.textContent = "🚗 乗合あり";
@@ -382,7 +585,6 @@ function toggleCarpool() {
   }
 }
 
-// ---------- IC区間の結合（「乗IC～降IC」形式の文字列に） ----------
 function combineLeg(fromId, toId) {
   const a = document.getElementById(fromId).value.trim();
   const b = document.getElementById(toId).value.trim();
@@ -390,14 +592,38 @@ function combineLeg(fromId, toId) {
   return a || b || "";
 }
 
-// ---------- 送信 ----------
+// ---------- 打刻だけ（出勤／退勤のみ） ----------
+async function punchOnly(type, kubun) {
+  const errId = (mode === "jimu") ? "jError" : (mode === "in" ? "inError" : "errorMsg");
+  const err = document.getElementById(errId);
+  err.classList.add("hidden");
+  if (!lineUserId) { err.textContent = "LINEアプリ内から開いてください。"; err.classList.remove("hidden"); return; }
+
+  const site = (type === "in" && kubun === "現場") ? (document.getElementById("inSite").value || "") : "";
+  try {
+    const res = await fetch(GAS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ type:"kintai", punch:type, kubun:kubun, site:site,
+                             name:lineName, userId:lineUserId })
+    });
+    const json = await res.json();
+    if (json.status !== "ok") throw new Error(json.message || "GAS側でエラー");
+    finish((type === "in" ? "出勤 " : "退勤 ") + json.time + " を記録しました",
+           (json.dn === "N" ? "🌙 夜勤" : "☀ 昼勤") + (json.site ? " / " + json.site : ""));
+  } catch (e) {
+    err.textContent = "打刻できませんでした。(" + e.message + ")";
+    err.classList.remove("hidden");
+  }
+}
+
+// ---------- 送信（退勤＋報告 / 報告のみ） ----------
 document.getElementById("reportForm").addEventListener("submit", async (ev) => {
   ev.preventDefault();
   const btn = document.getElementById("submitBtn");
   const errorMsg = document.getElementById("errorMsg");
   errorMsg.classList.add("hidden");
 
-  // 氏名の決定（LIFF取得 > 手入力）
   const name = lineName || document.getElementById("manualName").value.trim();
   if (!name) {
     errorMsg.textContent = "氏名を取得できませんでした。LINEアプリ内から開くか、氏名を入力してください。";
@@ -405,14 +631,11 @@ document.getElementById("reportForm").addEventListener("submit", async (ev) => {
     return;
   }
 
-  // 現場（未選択=空欄でOK→取込側が氏名で自動判別）
   const site = document.getElementById("siteSelect").value;
-
   const role = getRole();
   const distanceVisible = !document.getElementById("distanceWrap").classList.contains("hidden");
   const tollVisible = !document.getElementById("tollWrap").classList.contains("hidden");
 
-  // 乗合ONなら備考必須（乗合者名を備考へ）＋【乗合】を前置
   let note = document.getElementById("note").value.trim();
   if (carpool && !note) {
     errorMsg.textContent = "乗合者を備考に入力してください";
@@ -436,12 +659,13 @@ document.getElementById("reportForm").addEventListener("submit", async (ev) => {
     name: name,
     userId: lineUserId
   };
+  // 出勤中なら「退勤＋報告」を1回で送る
+  if (mode === "out") payload.type = "kintai_out_report";
 
   btn.disabled = true;
   btn.textContent = "送信中…";
 
   try {
-    // Content-Typeをtext/plainにするとCORSプリフライトが発生せずGASに届く
     const res = await fetch(GAS_URL, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
@@ -450,21 +674,131 @@ document.getElementById("reportForm").addEventListener("submit", async (ev) => {
     const json = await res.json();
     if (json.status !== "ok") throw new Error(json.message || "GAS側でエラー");
 
-    // 完了画面へ
-    document.getElementById("reportForm").classList.add("hidden");
-    document.getElementById("doneView").classList.remove("hidden");
-
-    // LINE内なら2秒後に自動で閉じる
-    setTimeout(() => {
-      if (liff.isInClient && liff.isInClient()) liff.closeWindow();
-    }, 2000);
+    if (mode === "out") {
+      finish("退勤 " + (json.time || "") + " ／ 報告を送信しました",
+             (json.dn === "N" ? "🌙 夜勤" : "☀ 昼勤") + (site ? " / " + site : ""),
+             json.punchWarning || "");
+    } else {
+      finish("報告を送信しました", site || "");
+    }
   } catch (e) {
     errorMsg.textContent = "送信に失敗しました。電波状況を確認してもう一度お試しください。(" + e.message + ")";
     errorMsg.classList.remove("hidden");
     btn.disabled = false;
-    btn.textContent = "送信する";
+    btn.textContent = (mode === "out") ? "退勤して報告する" : "送信する";
   }
 });
+
+function finish(text, sub, warn) {
+  document.getElementById("doneText").textContent = text;
+  document.getElementById("doneSub").textContent = sub || "";
+  const w = document.getElementById("doneWarn");
+  if (warn) { w.textContent = "⚠ " + warn; w.classList.remove("hidden"); }
+  else w.classList.add("hidden");
+  show("doneView");
+  setTimeout(() => { if (liff.isInClient && liff.isInClient()) liff.closeWindow(); }, warn ? 6000 : 2200);
+}
+
+// ---------- 手直し ----------
+async function openFix() {
+  show("fixView");
+  const list = document.getElementById("fixList");
+  list.innerHTML = '<p class="text-center text-slate-400 text-sm py-6">読み込み中…</p>';
+  try {
+    const res = await fetch(`${GAS_URL}?action=kintai_recent&days=14&userId=${encodeURIComponent(lineUserId)}`);
+    const json = await res.json();
+    if (json.status !== "ok") throw new Error(json.message || "取得できません");
+    renderFix(json.days || []);
+  } catch (e) {
+    list.innerHTML = '<p class="text-center text-red-600 text-sm py-6">取得できませんでした</p>';
+  }
+}
+
+async function closeFix() { await loadState(); await render(); }
+
+function renderFix(days) {
+  const list = document.getElementById("fixList");
+  list.innerHTML = "";
+  const defKubun = (state.kubun === "事務所" && !forcedGenba) ? "事務所" : "現場";
+  days.forEach(d => {
+    const dt = new Date(d.date + "T00:00:00");
+    const head = `${dt.getMonth()+1}/${dt.getDate()}（${DOW_JA[dt.getDay()]}）`;
+    if (d.rows.length === 0) {
+      list.appendChild(card(head, { id:"", date:d.date, kubun:defKubun, site:"", dn:"D", in:"", out:"" }, true));
+    } else {
+      d.rows.forEach(r => list.appendChild(card(head, r, false)));
+    }
+  });
+}
+
+function card(head, r, isNew) {
+  const wrap = document.createElement("div");
+  wrap.className = "bg-white rounded-2xl p-4 shadow";
+  wrap.innerHTML = `
+    <div class="flex items-center justify-between mb-2">
+      <span class="font-bold text-slate-700">${head}</span>
+      <span class="text-xs text-slate-400">${isNew ? "未打刻" : (r.dn === "N" ? "夜勤" : "昼勤") + " / " + r.kubun}</span>
+    </div>
+    <div class="flex items-center gap-2 mb-3">
+      <input type="time" class="fx-in  w-full border border-slate-300 rounded-xl px-2 py-2" value="${r.in || ""}">
+      <span class="text-slate-400 font-bold shrink-0">～</span>
+      <input type="time" class="fx-out w-full border border-slate-300 rounded-xl px-2 py-2" value="${r.out || ""}">
+    </div>
+    <input type="text" class="fx-site w-full border border-slate-300 rounded-xl px-3 py-2 mb-3 ${r.kubun === "事務所" ? "hidden" : ""}"
+           placeholder="現場（案件）" value="${(r.site || "").replace(/"/g, "&quot;")}">
+    <div class="flex items-center gap-2">
+      <select class="fx-kubun border border-slate-300 rounded-xl px-2 py-2 bg-white">
+        <option value="現場"   ${r.kubun !== "事務所" ? "selected" : ""}>現場</option>
+        <option value="事務所" ${r.kubun === "事務所" ? "selected" : ""}>事務所</option>
+      </select>
+      <select class="fx-dn border border-slate-300 rounded-xl px-2 py-2 bg-white" ${r.kubun === "事務所" ? "disabled" : ""}>
+        <option value="D" ${r.dn !== "N" ? "selected" : ""}>昼勤</option>
+        <option value="N" ${r.dn === "N" ? "selected" : ""}>夜勤</option>
+      </select>
+      <button type="button" class="fx-save ml-auto bg-slate-800 text-white font-bold px-5 py-2 rounded-xl active:scale-95">
+        ${isNew ? "この日を追加" : "保存"}
+      </button>
+    </div>`;
+
+  const kSel = wrap.querySelector(".fx-kubun");
+  const dSel = wrap.querySelector(".fx-dn");
+  const sInp = wrap.querySelector(".fx-site");
+  kSel.onchange = () => {
+    const jimu = kSel.value === "事務所";
+    sInp.classList.toggle("hidden", jimu);
+    dSel.disabled = jimu;
+    if (jimu) { dSel.value = "D"; sInp.value = ""; }
+  };
+
+  wrap.querySelector(".fx-save").onclick = async (ev) => {
+    const btn = ev.currentTarget;
+    btn.disabled = true; btn.textContent = "…";
+    try {
+      const res = await fetch(GAS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          type: "kintai_fix", id: r.id || "", date: r.date,
+          in:  wrap.querySelector(".fx-in").value,
+          out: wrap.querySelector(".fx-out").value,
+          site: sInp.value.trim(), kubun: kSel.value, dn: dSel.value,
+          name: lineName, userId: lineUserId
+        })
+      });
+      const json = await res.json();
+      if (json.status !== "ok") throw new Error(json.message || "保存できません");
+      if (json.id) r.id = json.id;
+      btn.textContent = "✅ 保存";
+      btn.className = "fx-save ml-auto bg-emerald-600 text-white font-bold px-5 py-2 rounded-xl";
+    } catch (e) {
+      btn.disabled = false; btn.textContent = "保存";
+      const el = document.getElementById("fixError");
+      el.textContent = "保存できませんでした。(" + e.message + ")";
+      el.classList.remove("hidden");
+    }
+  };
+  return wrap;
+}
 </script>
 </body>
 </html>
