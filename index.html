@@ -310,6 +310,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("headSub").textContent =
     `${TODAY.getFullYear()}年${TODAY.getMonth()+1}月${TODAY.getDate()}日（${DOW_JA[TODAY.getDay()]}）`;
 
+  // ★LIFFの初期化を待たずに、今日の案件の取得を先に走らせる（待ち時間を重ねる）
+  fetchEvents(TODAY_STR);
+
   try {
     await liff.init({ liffId: LIFF_ID });
     if (!liff.isLoggedIn()) { liff.login(); return; }
@@ -387,17 +390,24 @@ async function showReportOnly() {
 }
 
 // ---------- カレンダー案件（開始時刻つき） ----------
+// GASのウェブアプリは1回の呼び出しに1〜2秒かかる。同じ日を何度も取りに行かないよう
+// 日付ごとに覚えておき、さらにLIFFの初期化と並行して先読みする（体感速度の対策）。
+const eventsCache = {};
+function fetchEvents(dateStr) {
+  if (eventsCache[dateStr]) return eventsCache[dateStr];
+  eventsCache[dateStr] = fetch(`${GAS_URL}?action=kintai_events&date=${dateStr}`)
+    .then(r => r.json())
+    .then(j => (j.status === "ok") ? (j.events || []) : [])
+    .catch(e => { console.warn("events fetch failed:", e); return []; });
+  return eventsCache[dateStr];
+}
+
 async function loadEvents(dateStr, selectId) {
   const sel = document.getElementById(selectId);
-  sel.innerHTML = '<option value="">読み込み中…</option>';
-  try {
-    const res = await fetch(`${GAS_URL}?action=kintai_events&date=${dateStr}`);
-    const json = await res.json();
-    events = (json.status === "ok") ? (json.events || []) : [];
-  } catch (e) {
-    console.warn("events fetch failed:", e);
-    events = [];
+  if (!sel.options.length || sel.options[0].value !== "") {
+    sel.innerHTML = '<option value="">読み込み中…</option>';
   }
+  events = await fetchEvents(dateStr);
   sel.innerHTML = "";
   if (events.length === 0) {
     sel.appendChild(new Option("― この日の案件がありません（未選択で送信可）―", ""));
