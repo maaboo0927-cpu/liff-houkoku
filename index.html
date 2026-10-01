@@ -820,4 +820,61 @@ function card(head, r, isNew) {
       <span class="text-slate-400 font-bold shrink-0">～</span>
       <input type="time" class="fx-out w-full border border-slate-300 rounded-xl px-2 py-2" value="${r.out || ""}">
     </div>
-    <in
+    <input type="text" class="fx-site w-full border border-slate-300 rounded-xl px-3 py-2 mb-3 ${r.kubun === "事務所" ? "hidden" : ""}"
+           placeholder="現場（案件）" value="${(r.site || "").replace(/"/g, "&quot;")}">
+    <div class="flex items-center gap-2">
+      <select class="fx-kubun border border-slate-300 rounded-xl px-2 py-2 bg-white">
+        <option value="現場"   ${r.kubun !== "事務所" ? "selected" : ""}>現場</option>
+        <option value="事務所" ${r.kubun === "事務所" ? "selected" : ""}>事務所</option>
+      </select>
+      <select class="fx-dn border border-slate-300 rounded-xl px-2 py-2 bg-white" ${r.kubun === "事務所" ? "disabled" : ""}>
+        <option value="D" ${r.dn !== "N" ? "selected" : ""}>昼勤</option>
+        <option value="N" ${r.dn === "N" ? "selected" : ""}>夜勤</option>
+      </select>
+      <button type="button" class="fx-save ml-auto bg-slate-800 text-white font-bold px-5 py-2 rounded-xl active:scale-95">
+        ${isNew ? "この日を追加" : "保存"}
+      </button>
+    </div>`;
+
+  const kSel = wrap.querySelector(".fx-kubun");
+  const dSel = wrap.querySelector(".fx-dn");
+  const sInp = wrap.querySelector(".fx-site");
+  kSel.onchange = () => {
+    const jimu = kSel.value === "事務所";
+    sInp.classList.toggle("hidden", jimu);
+    dSel.disabled = jimu;
+    if (jimu) { dSel.value = "D"; sInp.value = ""; }
+  };
+
+  wrap.querySelector(".fx-save").onclick = async (ev) => {
+    const btn = ev.currentTarget;
+    btn.disabled = true; btn.textContent = "…";
+    try {
+      const res = await fetch(GAS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          type: "kintai_fix", id: r.id || "", date: r.date,
+          in:  wrap.querySelector(".fx-in").value,
+          out: wrap.querySelector(".fx-out").value,
+          site: sInp.value.trim(), kubun: kSel.value, dn: dSel.value,
+          name: lineName, userId: lineUserId
+        })
+      });
+      const json = await res.json();
+      if (json.status !== "ok") throw new Error(json.message || "保存できません");
+      if (json.id) r.id = json.id;
+      btn.textContent = "✅ 保存";
+      btn.className = "fx-save ml-auto bg-emerald-600 text-white font-bold px-5 py-2 rounded-xl";
+    } catch (e) {
+      btn.disabled = false; btn.textContent = "保存";
+      const el = document.getElementById("fixError");
+      el.textContent = "保存できませんでした。(" + e.message + ")";
+      el.classList.remove("hidden");
+    }
+  };
+  return wrap;
+}
+</script>
+</body>
+</html>
