@@ -254,6 +254,11 @@
             class="hidden w-full border-2 border-slate-300 bg-white text-slate-600 font-bold py-3 rounded-2xl">
       報告はあとで（退勤だけする）
     </button>
+    <!-- ★2026-10-01（R-20261001-03・案A）：事務所で出勤中のときだけ出す。退勤せず、報告だけ通常の報告として送る -->
+    <button type="button" id="reportOnlyBtn" onclick="submitReportOnly()"
+            class="hidden w-full border-2 border-emerald-500 bg-emerald-50 text-emerald-700 font-bold py-3 rounded-2xl">
+      報告だけ送る（退勤しない）
+    </button>
     <button type="button" id="backBtn" onclick="render()" class="hidden w-full text-sm text-slate-500 underline py-2">もどる</button>
   </form>
 
@@ -284,6 +289,7 @@ let state = null;        // GASから取得した打刻の状態
 let events = [];         // 選択中の日付のカレンダー案件
 let mode = "loading";    // loading / jimu / in / out / report / fin
 let forcedGenba = false; // 事務所の人が「現場に出た」を選んだ
+let reportOnlyWhileOpen = false; // 出勤中に「報告だけ送る（退勤しない）」を押した（R-20261001-03）
 let forcedJimu  = false; // 名簿未登録の人が自分で「事務所勤務」を選んだ（初回打刻で名簿に事務所として登録される）
 
 const DOW_JA = ["日","月","火","水","木","金","土"];
@@ -517,6 +523,7 @@ async function enterReportForm(withPunchOut) {
   const fixedDate = document.getElementById("fixedDate");
   const submit = document.getElementById("submitBtn");
   const outOnly = document.getElementById("outOnlyBtn");
+  const reportOnlyBtn = document.getElementById("reportOnlyBtn");
   const back = document.getElementById("backBtn");
 
   if (withPunchOut) {
@@ -532,6 +539,14 @@ async function enterReportForm(withPunchOut) {
     submit.textContent = "退勤して報告する";
     submit.className = "w-full bg-orange-600 active:scale-95 transition text-white font-bold py-5 rounded-2xl shadow-lg text-xl disabled:bg-slate-400";
     outOnly.classList.remove("hidden");
+    // 事務所の出勤中だけ「報告だけ送る（退勤しない）」を出す（現場の出勤中は退勤＋報告のまま）
+    // ★2026-10-01 付け足し（R-20261001-03）：事務所の出勤中は「退勤して報告する」を出さない
+    //   （事務所の出勤行に業務報告が入ると請求・ETC照合が拾えないため）
+    const jimuOpen = (o.kubun === "事務所");
+    reportOnlyBtn.disabled = false;
+    reportOnlyBtn.textContent = "報告だけ送る（退勤しない）";
+    submit.classList.toggle("hidden", jimuOpen);
+    reportOnlyBtn.classList.toggle("hidden", !jimuOpen);
     back.classList.add("hidden");
   } else {
     banner.classList.add("hidden");
@@ -540,6 +555,7 @@ async function enterReportForm(withPunchOut) {
     submit.textContent = "送信する";
     submit.className = "w-full bg-emerald-600 active:scale-95 transition text-white font-bold py-5 rounded-2xl shadow-lg text-xl disabled:bg-slate-400";
     outOnly.classList.add("hidden");
+    reportOnlyBtn.classList.add("hidden");
     back.classList.remove("hidden");
     updateDateUI();
   }
@@ -693,9 +709,26 @@ async function punchOnly(type, kubun) {
   }
 }
 
+// ---------- 報告だけ送る（出勤中・退勤しない） ----------
+// 送信は後追い報告と同じ通常の報告（type なし）→ {月}月LIFF に新しい行で入り、事務所の出勤行はそのまま残る
+function submitReportOnly() {
+  reportOnlyWhileOpen = true;
+  const f = document.getElementById("reportForm");
+  if (f.requestSubmit) f.requestSubmit();
+  else f.dispatchEvent(new Event("submit", { cancelable: true }));
+  // 入力チェック（required 等）で送信が止まった場合に、次の「退勤して報告する」へ持ち越さない
+  // （submit の処理は先頭で同期的にこのフラグを読むので、ここで戻してよい）
+  reportOnlyWhileOpen = false;
+}
+
 // ---------- 送信（退勤＋報告 / 報告のみ） ----------
 document.getElementById("reportForm").addEventListener("submit", async (ev) => {
   ev.preventDefault();
+  // 今回の送信が「報告だけ送る（退勤しない）」か。
+  // 事務所の出勤中は（Enterキー等で送信されても）必ず報告だけにする＝退勤＋報告は送らない（付け足し 2026-10-01）
+  const reportOnly = reportOnlyWhileOpen ||
+    (mode === "out" && !!state.open && state.open.kubun === "事務所");
+  reportOnlyWhileOpen = false;
   const btn = document.getElementById("submitBtn");
   const errorMsg = document.getElementById("errorMsg");
   errorMsg.classList.add("hidden");
@@ -735,11 +768,13 @@ document.getElementById("reportForm").addEventListener("submit", async (ev) => {
     name: name,
     userId: lineUserId
   };
-  // 出勤中なら「退勤＋報告」を1回で送る
-  if (mode === "out") payload.type = "kintai_out_report";
+  // 出勤中なら「退勤＋報告」を1回で送る（「報告だけ送る」のときは退勤しない＝type を付けない）
+  if (mode === "out" && !reportOnly) payload.type = "kintai_out_report";
 
   btn.disabled = true;
   btn.textContent = "送信中…";
+  document.getElementById("reportOnlyBtn").disabled = true;   // 二度押し防止
+  if (reportOnly) document.getElementById("reportOnlyBtn").textContent = "送信中…";
 
   try {
     const res = await fetch(GAS_URL, {
@@ -750,7 +785,10 @@ document.getElementById("reportForm").addEventListener("submit", async (ev) => {
     const json = await res.json();
     if (json.status !== "ok") throw new Error(json.message || "GAS側でエラー");
 
-    if (mode === "out") {
+    if (mode === "out" && reportOnly) {
+      finish("報告を送信しました（退勤はまだです）",
+             (site || "") + "　帰ったら事務所の画面で「退勤」を押してください");
+    } else if (mode === "out") {
       finish("退勤 " + (json.time || "") + " ／ 報告を送信しました",
              (json.dn === "N" ? "🌙 夜勤" : "☀ 昼勤") + (site ? " / " + site : ""),
              json.punchWarning || "");
@@ -762,6 +800,8 @@ document.getElementById("reportForm").addEventListener("submit", async (ev) => {
     errorMsg.classList.remove("hidden");
     btn.disabled = false;
     btn.textContent = (mode === "out") ? "退勤して報告する" : "送信する";
+    document.getElementById("reportOnlyBtn").disabled = false;
+    document.getElementById("reportOnlyBtn").textContent = "報告だけ送る（退勤しない）";
   }
 });
 
