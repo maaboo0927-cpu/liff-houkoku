@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex,nofollow">
+<title>社内ポータル</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+  .st-使用{background:#1d4ed8;color:#fff} .st-置放{background:#93c5fd;color:#1e3a8a} .st-空き{background:#f1f5f9;color:#94a3b8} .st-不明{background:#fef3c7;color:#92400e}
+  .cell{min-width:2.4rem;text-align:center;border-radius:.375rem;font-size:.7rem;padding:.15rem .2rem}
+</style>
+</head>
+<!--
+  社内ポータル 第1段階（R-20261002-01）— 2026-10-02 配車部 作成
+  ★このファイルには数字を書かない。数字はすべて、LINEで本人確認した後に「社内ポータルAPI」（GAS）から受け取る。
+  ★既存の index.html（報告フォーム）・admin.html（報告状況）とは別ファイル。どちらにも手を入れていない。
+-->
+<body class="bg-slate-100 min-h-screen text-slate-800">
+
+<!-- ★設定（導入手順 §2・§3 で書き換える） -->
+<script>
+const PORTAL_LIFF_ID = "2010603519-GkVndaXL";        // 例 2010603519-xxxxxxxx（導入手順 §2 で作る）
+const PORTAL_API_URL = "https://script.google.com/macros/s/AKfycbx5A7I_R5XotjeHYrcQiZ1MXuGQZdf8CRZbBY9NWlrXRN4pWVmXEFql6-osgS3I2Wgj/exec"; // 導入手順 §3 のデプロイで出る https://script.google.com/macros/s/.../exec
+</script>
+
+<header class="bg-slate-800 text-white sticky top-0 z-30">
+  <div class="max-w-6xl mx-auto px-4 h-12 flex items-center justify-between">
+    <h1 class="font-bold">社内ポータル</h1>
+    <div class="flex items-center gap-3">
+      <span id="me" class="text-xs text-slate-300"></span>
+      <button id="menuBtn" class="md:hidden text-2xl leading-none px-1" aria-label="メニュー" onclick="toggleMenu()">☰</button>
+    </div>
+  </div>
+</header>
+
+<!-- スマホ：☰メニュー -->
+<div id="mobileMenu" class="hidden md:hidden fixed top-12 right-2 z-40 bg-white rounded-xl shadow-lg p-2 w-48"></div>
+
+<div class="max-w-6xl mx-auto px-4 py-4 flex gap-4">
+  <!-- PC：左サイドのボタン（③配車と、今後の追加項目） -->
+  <nav id="side" class="hidden md:flex flex-col gap-2 w-40 shrink-0"></nav>
+
+  <main class="flex-1 min-w-0">
+    <div id="loading" class="bg-white rounded-2xl p-8 text-center shadow text-slate-500">LINEで本人確認しています…</div>
+    <div id="msg" class="hidden bg-amber-50 border border-amber-300 rounded-2xl p-5 shadow text-sm text-amber-900"></div>
+    <div id="grid" class="hidden grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+  </main>
+</div>
+
+<!-- ポップアップ（明細・サイドの項目） -->
+<div id="modal" class="hidden fixed inset-0 z-50 bg-black/40 flex items-start md:items-center justify-center p-2 md:p-6" onclick="if(event.target===this)closeModal()">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-5xl max-h-[92vh] flex flex-col">
+    <div class="flex items-center justify-between px-4 py-3 border-b">
+      <div><h2 id="mTitle" class="font-bold"></h2><p id="mAsOf" class="text-xs text-slate-400"></p></div>
+      <button class="text-2xl leading-none px-2 text-slate-500" onclick="closeModal()" aria-label="閉じる">×</button>
+    </div>
+    <div id="mBody" class="p-4 overflow-auto text-sm"></div>
+  </div>
+</div>
+
+<script>
+const DOW = ["日","月","火","水","木","金","土"];
+let SESSION = "", BLOCKS = [];
+
+function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function md(ds){ const d = new Date(ds + "T00:00:00"); return `${d.getMonth()+1}/${d.getDate()}(${DOW[d.getDay()]})`; }
+function ssGet(k){ try { return sessionStorage.getItem(k) || ""; } catch(e){ return ""; } }
+function ssSet(k,v){ try { v ? sessionStorage.setItem(k,v) : sessionStorage.removeItem(k); } catch(e){} }
+
+async function api(body){
+  const res = await fetch(PORTAL_API_URL, { method:"POST", headers:{ "Content-Type":"text/plain;charset=utf-8" }, body: JSON.stringify(body) });
+  return res.json();
+}
+
+function showMsg(html){
+  document.getElementById("loading").classList.add("hidden");
+  const m = document.getElementById("msg"); m.innerHTML = html; m.classList.remove("hidden");
+}
+
+window.addEventListener("DOMContentLoaded", start);
+
+async function start(){
+  try {
+    await liff.init({ liffId: PORTAL_LIFF_ID });
+    if (!liff.isLoggedIn()) { liff.login({ redirectUri: location.href }); return; }
+    const idToken = liff.getIDToken();
+    if (!idToken) { showMsg("LINEのIDトークンが取れません。LIFFの設定で scope に <b>openid</b> を入れてください（導入手順 §2）。"); return; }
+    const r = await api({ type:"login", idToken });
+    if (r.status === "auth_error") {
+      if (r.reason === "token_expired") { liff.logout(); liff.login({ redirectUri: location.href }); return; }
+      showMsg("本人確認に失敗しました（" + esc(r.reason) + "）。"); return;
+    }
+    if (r.status === "unregistered") {
+      showMsg(`<p class="font-bold mb-2">まだ閲覧の登録がありません</p>
+        <p class="mb-2">${esc(r.name)} さんの申請を受け付けました。管理者が「ポータル_役割」シートで役割を選び、有効を 1 にすると見られるようになります。</p>
+        <p class="text-xs text-amber-700">登録用ID：<span class="select-all break-all">${esc(r.userId)}</span></p>`);
+      return;
+    }
+    if (r.status !== "ok") throw new Error(r.message || r.status);
+    SESSION = r.session; BLOCKS = r.blocks;
+    document.getElementById("me").textContent = `${r.me.name}（${r.me.role}）`;
+    renderShell(r.data);
+  } catch (e) {
+    showMsg("読み込みに失敗しました（" + esc(e.message) + "）。少し待って開き直してください。");
+  }
+}
+
+// ─── 画面の骨組み：メイン＝place:"main"、サイド／☰＝place:"side" ───
+function renderShell(data){
+  document.getElementById("loading").classList.add("hidden");
+  const grid = document.getElementById("grid"); grid.innerHTML = ""; grid.classList.remove("hidden");
+  BLOCKS.filter(b => b.place === "main").forEach(b => {
+    const el = document.createElement("section");
+    el.id = "blk-" + b.id;
+    el.className = "bg-white rounded-2xl shadow p-4 " + (b.ready ? "cursor-pointer hover:ring-2 hover:ring-slate-300" : "");
+    if (b.ready) el.onclick = () => openDetail(b);
+    grid.appendChild(el);
+    drawBlock(b, data[b.id] || {});
+  });
+  const side = document.getElementById("side"), mm = document.getElementById("mobileMenu");
+  side.innerHTML = ""; mm.innerHTML = "";
+  BLOCKS.filter(b => b.place === "side").forEach(b => {
+    const mk = cls => { const x = document.createElement("button"); x.className = cls; x.textContent = b.title; x.onclick = () => { mm.classList.add("hidden"); openDetail(b); }; return x; };
+    side.appendChild(mk("bg-white rounded-xl shadow px-3 py-3 text-left font-bold hover:bg-slate-50"));
+    mm.appendChild(mk("block w-full text-left px-3 py-2 rounded-lg hover:bg-slate-100 font-bold"));
+  });
+}
+function toggleMenu(){ document.getElementById("mobileMenu").classList.toggle("hidden"); }
+
+function head(b, v){
+  return `<div class="flex items-baseline justify-between gap-2 mb-2">
+      <h2 class="font-bold">${esc(b.title)}</h2>
+      ${b.ready ? '<span class="text-xs text-slate-400 shrink-0">クリックで明細 ›</span>' : ""}</div>
+    <p class="text-[11px] text-slate-400 mb-3">${v && v.asOf ? esc(v.asOf) : ""}</p>`;
+}
+
+function drawBlock(b, v){
+  const el = document.getElementById("blk-" + b.id);
+  if (!b.ready || v.ready === false) { el.innerHTML = head(b) + `<p class="text-slate-400 text-sm">準備中（${esc(b.owner)}）</p>`; return; }
+  if (v.error) { el.innerHTML = head(b, v) + `<p class="text-red-600 text-sm">読み込みエラー：${esc(v.error)}</p>`; return; }
+  if (v.empty) { el.innerHTML = head(b, v) + `<p class="text-slate-400 text-sm">${esc(v.empty)}</p>`; return; }
+  const f = MAIN[b.id]; el.innerHTML = head(b, v) + (f ? f(v) : "");
+}
+
+async function openDetail(b){
+  document.getElementById("mTitle").textContent = b.title;
+  document.getElementById("mAsOf").textContent = "読み込み中…";
+  document.getElementById("mBody").innerHTML = "";
+  document.getElementById("modal").classList.remove("hidden");
+  try {
+    let r = await api({ type:"load", session: SESSION, ids:[b.id], detail:true });
+    if (r.status === "relogin") { closeModal(); location.reload(); return; }
+    const v = (r.data || {})[b.id] || {};
+    document.getElementById("mAsOf").textContent = v.asOf || "";
+    const f = DETAIL[b.id];
+    document.getElementById("mBody").innerHTML = v.error ? `<p class="text-red-600">${esc(v.error)}</p>` : v.empty ? esc(v.empty) : (f ? f(v) : "");
+  } catch (e) {
+    document.getElementById("mAsOf").textContent = "";
+    document.getElementById("mBody").innerHTML = `<p class="text-red-600">読み込みに失敗しました（${esc(e.message)}）</p>`;
+  }
+}
+function closeModal(){ document.getElementById("modal").classList.add("hidden"); }
+
+// ─── ブロックごとの描き方（ブロックを足すときは MAIN と DETAIL に1つずつ） ───
+function chip(t, cls){ return `<span class="inline-block border rounded-full px-2 py-0.5 text-xs font-bold mr-1 mb-1 ${cls}">${esc(t)}</span>`; }
+
+function statusGrid(v, detail){
+  const row = (u) => `<tr><td class="pr-2 py-0.5 font-bold whitespace-nowrap">${esc(u.no)}${detail && u.plate ? `<span class="block text-[10px] font-normal text-slate-400">${esc(u.plate)}</span>` : ""}</td>` +
+    v.dates.map(d => { const x = u.days[d] || {status:"不明"};
+      const who = detail ? (x.D || []).map(y => "昼 " + (y.name || y.who) + " " + y.site).concat((x.N || []).map(y => "夜 " + (y.name || y.who) + " " + y.site)).join("\n") + (x.hold ? "置放 " + x.hold : "") : "";
+      return `<td class="p-0.5"><div class="cell st-${esc(x.status)}" title="${esc(who)}">${esc(x.status)}</div>${detail && who ? `<div class="text-[10px] text-slate-500 leading-tight whitespace-pre-line max-w-[8rem]">${esc(who)}</div>` : ""}</td>`; }).join("") + "</tr>";
+  const tbl = (title, list) => `<p class="text-xs font-bold text-slate-500 mt-2 mb-1">${title}</p><div class="overflow-x-auto"><table class="text-xs"><thead><tr><th></th>${v.dates.map(d => `<th class="px-1 font-normal text-slate-500 whitespace-nowrap">${md(d)}</th>`).join("")}</tr></thead><tbody>${list.map(row).join("")}</tbody></table></div>`;
+  return tbl(`機械（${v.total.m}台）`, v.machines) + tbl(`回送車（${v.total.v}台）`, v.vehicles);
+}
+
+const MAIN = {
+  report: v => `<div class="flex gap-4 mb-3">
+      <div><p class="text-3xl font-bold">${v.missing.length}</p><p class="text-xs text-slate-500">今日の未報告 / 名簿${v.rosterCount}名</p></div>
+      <div><p class="text-3xl font-bold text-emerald-600">${v.reportedCount}</p><p class="text-xs text-slate-500">報告済み</p></div>
+      <div><p class="text-3xl font-bold text-sky-600">${v.working.length}</p><p class="text-xs text-slate-500">出勤中</p></div></div>
+    <div>${v.missing.map(n => chip(n, "bg-red-50 text-red-700 border-red-200")).join("") || '<span class="text-emerald-600 text-sm font-bold">全員報告済み</span>'}</div>
+    <p class="text-[11px] text-slate-400 mt-1">休みの人も未報告に含まれます。</p>`,
+  kado: v => `<div class="flex gap-2 mb-1 text-xs">${v.dates.map(d => `<div class="flex-1 bg-slate-50 rounded-lg p-2 text-center"><p class="text-slate-500">${md(d)}</p><p><b class="text-lg">${v.count[d].m}</b>/${v.total.m} 機械</p><p><b>${v.count[d].v}</b>/${v.total.v} 回送車</p></div>`).join("")}</div>` + statusGrid(v, false)
+};
+
+const DETAIL = {
+  report: v => v.days.map((d, i) => `<div class="mb-4"><p class="font-bold mb-1">${md(d.date)}${i === 0 ? " 今日" : ""} <span class="text-xs text-slate-500">${d.entries.filter(x => x.reported).length}件</span></p>` +
+      (d.entries.length ? `<table class="w-full text-xs"><tbody>${d.entries.map(x => `<tr class="border-b"><td class="py-1 pr-2 font-bold whitespace-nowrap">${esc(x.name)}</td><td class="pr-2">${x.reported ? chip(x.role, x.role === "回送" ? "bg-sky-50 text-sky-700 border-sky-200" : "bg-emerald-50 text-emerald-700 border-emerald-200") : chip("出勤中", "bg-amber-50 text-amber-700 border-amber-200")}</td><td class="pr-2">${esc(x.site)}</td><td class="pr-2 whitespace-nowrap">${x.dist !== "" ? esc(x.dist) + "km" : ""}${x.park !== "" ? " 駐車" + esc(x.park) + "円" : ""}</td><td class="whitespace-nowrap text-slate-500">${esc(x.tin)}${x.tout ? "〜" + esc(x.tout) : ""}</td></tr>`).join("")}</tbody></table>` : '<p class="text-slate-400 text-xs">報告なし</p>') + "</div>").join(""),
+  kado: v => `<p class="text-xs text-slate-500 mb-2">${esc(v.note || "")}</p>` + statusGrid(v, true),
+  haisha: v => {
+    const tabs = v.dates.map((d, i) => `<button class="hz-tab px-3 py-1 rounded-full border text-xs ${i ? "" : "bg-slate-800 text-white"}" onclick="hzShow(${i})">${md(d)}</button>`).join(" ");
+    const pages = v.dates.map((d, i) => {
+      const rows = (v.crew[d] || []).slice().sort((a, b) => (a.dn + a.site).localeCompare(b.dn + b.site, "ja"));
+      return `<div class="hz-page ${i ? "hidden" : ""}"><table class="w-full text-xs"><thead><tr class="text-slate-500 text-left"><th>昼夜</th><th>人</th><th>役割</th><th>機械</th><th>回送車</th><th>元請</th><th>現場</th><th>摘要</th></tr></thead><tbody>` +
+        rows.map(x => `<tr class="border-b align-top"><td class="py-1 pr-1">${x.dn === "N" ? "夜" : "昼"}</td><td class="pr-1 font-bold whitespace-nowrap">${esc(x.name)}</td><td class="pr-1 whitespace-nowrap">${esc(x.role)}</td><td class="pr-1">${esc(x.machine)}</td><td class="pr-1 whitespace-nowrap">${x.vehicles.map(y => esc(y.code)).join(" ")}</td><td class="pr-1">${esc(x.moto)}</td><td class="pr-1">${esc(x.site)}</td><td class="text-slate-500">${esc(x.tekiyo)}${x.est ? ' <span class="text-amber-600">★推定</span>' : ""}</td></tr>`).join("") +
+        `</tbody></table><p class="text-xs text-slate-500 mt-2">休み・事務所など：${(v.offs[d] || []).map(o => esc(o.name) + "（" + esc(o.what) + "）").join("、") || "なし"}</p></div>`;
+    }).join("");
+    return `<p class="text-xs text-slate-500 mb-2">${esc(v.note || "")}</p><div class="flex flex-wrap gap-1 mb-3">${tabs}</div>${pages}`;
+  }
+};
+
+function hzShow(i){
+  document.querySelectorAll(".hz-page").forEach((p, j) => p.classList.toggle("hidden", j !== i));
+  document.querySelectorAll(".hz-tab").forEach((t, j) => { t.classList.toggle("bg-slate-800", j === i); t.classList.toggle("text-white", j === i); });
+}
+</script>
+</body>
+</html>
