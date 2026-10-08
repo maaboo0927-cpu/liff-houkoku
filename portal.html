@@ -201,6 +201,94 @@ const DETAIL = {
   }
 };
 
+// ─── ①客別売上・②社内規定（R-20261007-01） ───
+function yen(n){ return Number(n || 0).toLocaleString("ja-JP"); }
+function ymJ(ym){ const a = String(ym || "").split("-"); return a.length > 1 ? `${Number(a[1])}月` : ym; }
+const TBL = 'class="w-full text-xs"';
+const TH = s => `<th class="px-1 py-1 font-normal text-slate-500 text-left whitespace-nowrap">${s}</th>`;
+const TDR = s => `<td class="px-1 py-1 text-right whitespace-nowrap">${s}</td>`;
+
+function salesHead(m){
+  const p = m.prev_same_point;
+  let prev = "";
+  if (p) {
+    const d = m.sales - p.sales;
+    prev = `<p class="text-xs mb-2">前月同時点（${ymJ(p.month)}〜${p.upto_day || "末"}日）${yen(p.sales)}円・${p.count}件
+      <b class="${d >= 0 ? "text-emerald-600" : "text-red-600"}">${d >= 0 ? "+" : ""}${yen(d)}円</b></p>`;
+  }
+  return `<p class="text-xs text-slate-500">売上（稼働＋回送・税抜）</p>
+    <p class="text-3xl font-bold">${yen(m.sales)}<span class="text-base font-normal">円</span></p>
+    <p class="text-xs text-slate-500 mb-2">稼働 ${yen(m.kado)}／回送 ${yen(m.kaiso)}／高速 ${yen(m.kosoku)}／駐車 ${yen(m.chusha)}<br>参考：請求額（4つの合計）${yen(m.total)}円</p>
+    <div class="mb-1">${chip("稼働 " + m.count + "件", "bg-slate-50 text-slate-600 border-slate-200")}${chip("単価未登録 " + m.tanka_missing + "件", m.tanka_missing ? "bg-red-50 text-red-700 border-red-200" : "bg-slate-50 text-slate-600 border-slate-200")}${chip("得意先コード無し " + m.uncoded + "件", m.uncoded ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-slate-50 text-slate-600 border-slate-200")}</div>
+    ${prev}`;
+}
+const SALES_NOTE = `<p class="text-[11px] text-slate-400 mt-2">月の前半は回送が少なく出ます（距離・回送の入力待ち）。単価未登録の行は0円で数えています。</p>`;
+
+Object.assign(MAIN, {
+  sales: v => {
+    const m = v.main;
+    return salesHead(m) +
+      `<table ${TBL}><tbody>${(m.top || []).map((c, i) => `<tr class="border-b"><td class="py-1 pr-1 text-slate-400">${i + 1}</td><td class="pr-1">${esc(c.name)}</td>${TDR(c.count + "件")}${TDR(yen(c.sales))}</tr>`).join("")}</tbody></table>` +
+      (v.warn ? `<p class="text-red-600 text-xs mt-1">${esc(v.warn)}</p>` : "") + SALES_NOTE;
+  },
+  rules: v => {
+    let h = "";
+    if (v.minarai && !v.minarai.empty) {
+      h += `<p class="text-xs font-bold text-slate-500 mb-1">見習い（60クラス）</p>` + v.minarai.people.map(p =>
+        `<div class="flex items-baseline gap-2 mb-2"><b>${esc(p.name)}</b><span class="text-2xl font-bold">${p.total}</span><span class="text-xs text-slate-500">／${p.goal}・残り ${p.remain}・今月 ${p.this_month}</span></div>`).join("");
+    } else if (v.minarai) h += `<p class="text-xs text-slate-400">見習い：${esc(v.minarai.empty)}</p>`;
+    if (v.kintai && !v.kintai.empty) {
+      const k = v.kintai;
+      h += `<p class="text-xs font-bold text-slate-500 mt-2">出退勤の打刻がなかった日 <span class="font-normal">（${md(k.from)}〜${md(k.to)}）</span></p>
+        <p class="text-sm">出勤 <b class="text-lg">${k.fy.inN}</b>日・退勤 <b class="text-lg">${k.fy.outN}</b>日（${k.fy.people}人）<span class="text-xs text-slate-500">　今月 出勤${k.month.inN}・退勤${k.month.outN}</span></p>`;
+    } else if (v.kintai) h += `<p class="text-xs text-slate-400 mt-2">出退勤：${esc(v.kintai.empty)}</p>`;
+    if (v.kyori && !v.kyori.empty) {
+      const k = v.kyori;
+      h += `<p class="text-xs font-bold text-slate-500 mt-2">距離報告がなかった回数 <span class="font-normal">（回送担当の日・${md(k.from)}〜${md(k.to)}）</span></p>
+        <p class="text-sm"><b class="text-lg">${k.fy.n}</b>回（${k.fy.people}人）<span class="text-xs text-slate-500">　今月 ${k.month.n}回</span></p>`;
+    } else if (v.kyori) h += `<p class="text-xs text-slate-400 mt-2">距離報告：${esc(v.kyori.empty)}</p>`;
+    if (v.unknown && v.unknown.length) h += `<p class="text-[11px] text-slate-400 mt-2">名簿で突き合わせできない人は数えていません（${v.unknown.length}人）。</p>`;
+    return h;
+  }
+});
+
+Object.assign(DETAIL, {
+  sales: v => {
+    const m = v.main, d = v.detail || {};
+    const cust = `<p class="text-xs font-bold text-slate-500 mt-3 mb-1">客別（得意先コードごと）</p><div class="overflow-x-auto"><table ${TBL}><thead><tr>${["コード","得意先","件数","売上","稼働","回送","高速","駐車","参考：請求額"].map(TH).join("")}</tr></thead><tbody>` +
+      (d.customers || []).map(c => `<tr class="border-b"><td class="px-1 py-1 whitespace-nowrap">${esc(c.code || "－")}</td><td class="px-1">${esc(c.name)}</td>${TDR(c.count)}${TDR("<b>" + yen(c.sales) + "</b>")}${TDR(yen(c.kado))}${TDR(yen(c.kaiso))}${TDR(yen(c.kosoku))}${TDR(yen(c.chusha))}${TDR(yen(c.total))}</tr>`).join("") + "</tbody></table></div>";
+    const rows = `<p class="text-xs font-bold text-slate-500 mt-4 mb-1">稼働1件ごと</p><div class="overflow-x-auto"><table ${TBL}><thead><tr>${["日","昼夜","得意先","現場","機種","稼働","回送","高速","駐車","売上"].map(TH).join("")}</tr></thead><tbody>` +
+      (d.rows || []).map(x => `<tr class="border-b ${x.tanka_missing ? "bg-red-50" : ""}"><td class="px-1 py-1">${x.day}</td><td class="px-1">${x.dn === "N" ? "夜" : "昼"}</td><td class="px-1">${esc(x.official)}</td><td class="px-1">${esc(x.genba)}</td><td class="px-1">${esc(x.kishu)}</td>${TDR(x.tanka_missing ? '<span class="text-red-700">単価未登録</span>' : yen(x.kado))}${TDR(yen(x.kaiso))}${TDR(yen(x.kosoku))}${TDR(yen(x.chusha))}${TDR(yen(x.sales))}</tr>`).join("") + "</tbody></table></div>";
+    return salesHead(m) + (v.warn ? `<p class="text-red-600 text-xs">${esc(v.warn)}</p>` : "") + SALES_NOTE + cust + rows;
+  },
+  rules: v => {
+    let h = "";
+    if (v.minarai && !v.minarai.empty) {
+      const mi = v.minarai;
+      h += `<h3 class="font-bold mb-1">見習い（60クラス）</h3><p class="text-xs text-slate-500 mb-2">${esc(mi.rule)}（〜${md(mi.upto)}）</p>` + mi.people.map(p =>
+        `<div class="mb-3"><p><b>${esc(p.name)}</b> 通算 <b>${p.total}</b>／${p.goal}・残り ${p.remain}（${esc(p.from)}から）</p>
+         <p class="text-xs my-1">${(p.months || []).map(x => `${ymJ(x.month)} ${x.count == null ? "－" : x.count}`).join("　")}</p>
+         <table ${TBL}><tbody>${(p.items || []).slice().reverse().map(x => `<tr class="border-b"><td class="px-1 py-1 whitespace-nowrap">${md(x.date)}</td><td class="px-1">${x.dn === "N" ? "夜" : "昼"}</td><td class="px-1">${esc(x.text)}</td></tr>`).join("")}</tbody></table></div>`).join("") +
+        (mi.notes && mi.notes.length ? `<p class="text-[11px] text-amber-700">${mi.notes.map(esc).join("／")}</p>` : "");
+    }
+    if (v.kintai && !v.kintai.empty) {
+      const k = v.kintai;
+      h += `<h3 class="font-bold mt-4 mb-1">出退勤の打刻がなかった日</h3><p class="text-xs text-slate-500 mb-2">${md(k.from)}〜${md(k.to)}。従業員日報で出勤の記載がある日（休み・講習・健康診断・病院などは除く）に、業務報告シートの出勤・退勤の打刻が無い日数。手直しで入れた日は数に入らず、別に表示します。</p>` +
+        (k.persons.length ? `<div class="overflow-x-auto"><table ${TBL}><thead><tr>${["人","出勤なし","退勤なし","月別（出勤/退勤）","日付","手直しで入れた日"].map(TH).join("")}</tr></thead><tbody>` +
+        k.persons.map(p => `<tr class="border-b align-top"><td class="px-1 py-1 font-bold whitespace-nowrap">${esc(p.name)}</td>${TDR(p.fy.inN)}${TDR(p.fy.outN)}<td class="px-1 whitespace-nowrap">${Object.keys(p.byMonth).sort().map(ym => `${ymJ(ym)} ${p.byMonth[ym].inN}/${p.byMonth[ym].outN}`).join("<br>")}</td><td class="px-1">${p.days.map(d => `${md(d.date)}${d.noIn && d.noOut ? "" : d.noIn ? "（出勤のみなし）" : "（退勤のみなし）"}`).join("、")}</td><td class="px-1 text-slate-500">${p.fixed.map(x => md(x)).join("、")}</td></tr>`).join("") + "</tbody></table></div>" : '<p class="text-xs text-slate-400">該当なし</p>');
+    }
+    if (v.kyori && !v.kyori.empty) {
+      const k = v.kyori;
+      h += `<h3 class="font-bold mt-4 mb-1">距離報告がなかった回数</h3><p class="text-xs text-slate-500 mb-2">${md(k.from)}〜${md(k.to)}。稼働日報で回送（入・出）の担当になっている日に、業務報告の距離が入っていない回数（1日1回）。</p>` +
+        (k.persons.length ? `<div class="overflow-x-auto"><table ${TBL}><thead><tr>${["人","回数","月別","日付・現場","手直しで入れた日"].map(TH).join("")}</tr></thead><tbody>` +
+        k.persons.map(p => `<tr class="border-b align-top"><td class="px-1 py-1 font-bold whitespace-nowrap">${esc(p.name)}</td>${TDR(p.fy)}<td class="px-1 whitespace-nowrap">${Object.keys(p.byMonth).sort().map(ym => `${ymJ(ym)} ${p.byMonth[ym]}`).join("<br>")}</td><td class="px-1">${p.days.map(d => `${md(d.date)} ${esc(d.sites.join("・"))}`).join("<br>")}</td><td class="px-1 text-slate-500">${p.fixed.map(x => md(x)).join("、")}</td></tr>`).join("") + "</tbody></table></div>" : '<p class="text-xs text-slate-400">該当なし</p>') +
+        (k.missingFiles && k.missingFiles.length ? `<p class="text-[11px] text-amber-700">読めなかった稼働日報：${k.missingFiles.map(esc).join("、")}</p>` : "");
+    }
+    if (v.unknown && v.unknown.length) h += `<p class="text-[11px] text-slate-500 mt-3">名簿（乗務員名簿のF列＝日報シート名）で突き合わせできないため数えていない人：${v.unknown.map(esc).join("、")}</p>`;
+    return h;
+  }
+});
+
 function hzShow(i){
   document.querySelectorAll(".hz-page").forEach((p, j) => p.classList.toggle("hidden", j !== i));
   document.querySelectorAll(".hz-tab").forEach((t, j) => { t.classList.toggle("bg-slate-800", j === i); t.classList.toggle("text-white", j === i); });
