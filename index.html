@@ -66,17 +66,28 @@
 
   <!-- ===== 朝：出勤モード ===== -->
   <div id="inView" class="hidden">
+    <!-- ★R-20261009-01（2026-10-09 配車部）：0時を回って出勤を押し忘れた夜勤のため、前日の案件を選べるようにする -->
+    <p id="nightHint" class="hidden mb-3 text-sm font-bold px-3 py-2 rounded-xl text-indigo-800 bg-indigo-50 border border-indigo-200"></p>
+    <div class="grid grid-cols-2 gap-3 mb-3">
+      <button type="button" id="inDateTodayBtn" onclick="setInDate('today')" class="border-2 rounded-xl py-2.5 text-center font-bold text-sm"></button>
+      <button type="button" id="inDateYestBtn" onclick="setInDate('yesterday')" class="border-2 rounded-xl py-2.5 text-center font-bold text-sm"></button>
+    </div>
     <div class="bg-white rounded-2xl p-4 shadow mb-4">
-      <label class="block text-sm font-bold text-slate-700 mb-1">本日の現場（案件）</label>
+      <label id="inSiteLabel" class="block text-sm font-bold text-slate-700 mb-1">本日の現場（案件）</label>
       <p class="text-xs text-slate-400 mb-2">選ぶと昼勤・夜勤が案件の時刻どおりに記録され、帰りの報告にも引き継がれます。</p>
       <select id="inSite" onchange="renderSiteHint()"
               class="w-full border border-slate-300 rounded-xl px-3 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
         <option value="">読み込み中…</option>
       </select>
       <p id="siteHint" class="hidden mt-2 text-sm font-bold px-3 py-2 rounded-xl"></p>
+      <div id="inTimeWrap" class="hidden mt-3">
+        <label class="block text-sm font-bold text-slate-700 mb-1">実際に出勤した時刻 <span class="text-red-500">*</span></label>
+        <p class="text-xs text-slate-400 mb-1">前日の出勤として記録します（押し忘れの手直しと同じ扱い）。帰りはこの画面から「退勤して報告する」が出ます。</p>
+        <input type="time" id="inTime" class="w-full border border-slate-300 rounded-xl px-3 py-2">
+      </div>
     </div>
 
-    <button type="button" id="btnIn" onclick="punchOnly('in','現場')"
+    <button type="button" id="btnIn" onclick="punchIn()"
             class="w-full bg-emerald-600 active:scale-95 transition text-white font-bold py-6 rounded-2xl shadow-lg text-2xl mb-4 disabled:bg-slate-300">
       出勤
     </button>
@@ -133,8 +144,10 @@
     <div class="bg-white rounded-2xl p-4 shadow space-y-4">
       <div id="dateWrap">
         <label class="block text-sm font-bold text-slate-700 mb-1">日付 <span class="text-red-500">*</span></label>
-        <div class="grid grid-cols-2 gap-3 mb-2">
+        <div class="grid grid-cols-3 gap-2 mb-2">
           <button type="button" id="dateTodayBtn" onclick="setDateMode('today')"
+                  class="border-2 rounded-xl py-2.5 text-center font-bold text-sm"></button>
+          <button type="button" id="dateYestBtn" onclick="setDateMode('yesterday')"
                   class="border-2 rounded-xl py-2.5 text-center font-bold text-sm"></button>
           <button type="button" id="dateOtherBtn" onclick="setDateMode('other')"
                   class="border-2 rounded-xl py-2.5 text-center font-bold text-sm">それ以外</button>
@@ -301,6 +314,12 @@ const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 const TODAY_STR = fmtDate(TODAY);
 let selectedDate = TODAY_STR;
 let dateMode = "today";
+// ★R-20261009-01：前日（日跨ぎ夜勤の打刻忘れ用）
+const YEST = new Date(TODAY); YEST.setDate(YEST.getDate() - 1);
+const YEST_STR = fmtDate(YEST);
+const NIGHT_HINT_UNTIL = 6;   // 0:00〜この時刻（時）未満に開いたら「前日の夜勤ですか？」を出す（★オーナー判断に積む）
+let inDateMode = "today";     // 出勤画面の日付：today / yesterday（勝手に前日にはしない）
+function mdw(d) { return `${d.getMonth()+1}/${d.getDate()} ${DOW_JA[d.getDay()]}`; }
 let calY = TODAY.getFullYear(), calM = TODAY.getMonth();
 
 function tickClock() {
@@ -318,6 +337,7 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // ★LIFFの初期化を待たずに、今日の案件の取得を先に走らせる（待ち時間を重ねる）
   fetchEvents(TODAY_STR).catch(() => {});   // 失敗時は画面側（loadEvents）で取り直す
+  if (new Date().getHours() < NIGHT_HINT_UNTIL) fetchEvents(YEST_STR).catch(() => {});   // 夜勤明けの時間帯は前日も先読み（R-20261009-01）
 
   try {
     await liff.init({ liffId: LIFF_ID });
@@ -382,7 +402,8 @@ async function render() {
     return;
   }
   mode = "in";                           // 未出勤 → 朝の出勤画面
-  await loadEvents(TODAY_STR, "inSite");
+  updateInDateUI();
+  await loadEvents(inDateMode === "yesterday" ? YEST_STR : TODAY_STR, "inSite");
   show("inView");
 }
 
@@ -391,7 +412,9 @@ function switchToJimu()  { forcedJimu = true;  forcedGenba = false; render(); }
 function startNextShift() { state.today = {}; state.open = null; render(); }
 async function showReportOnly() {
   mode = "report";
-  selectedDate = TODAY_STR; dateMode = "today";
+  // 出勤画面で「前日」を選んでいたら、後追い報告も前日で開く（R-20261009-01）
+  if (inDateMode === "yesterday") { selectedDate = YEST_STR; dateMode = "yesterday"; }
+  else { selectedDate = TODAY_STR; dateMode = "today"; }
   await enterReportForm(false);
 }
 
@@ -503,6 +526,8 @@ function renderSiteHint() {
   const hint = document.getElementById("siteHint");
   const ev = eventByTitle(document.getElementById("inSite").value);
   if (!ev) { hint.classList.add("hidden"); return; }
+  const inTime = document.getElementById("inTime");
+  if (inDateMode === "yesterday" && ev.start && inTime && !inTime.value) inTime.value = ev.start;   // 前日：案件の開始時刻を仮に入れる
   if (ev.dn === "N") {
     hint.textContent = "🌙 夜勤として記録します（" + (ev.start || "終日") + " 開始）";
     hint.className = "mt-2 text-sm font-bold px-3 py-2 rounded-xl text-indigo-800 bg-indigo-50 border border-indigo-200";
@@ -571,6 +596,7 @@ async function enterReportForm(withPunchOut) {
 function setDateMode(m) {
   dateMode = m;
   if (m === "today") { selectedDate = TODAY_STR; calY = TODAY.getFullYear(); calM = TODAY.getMonth(); }
+  if (m === "yesterday") { selectedDate = YEST_STR; calY = YEST.getFullYear(); calM = YEST.getMonth(); }
   updateDateUI();
   if (m === "other") renderCalendar();
   loadEvents(selectedDate, "siteSelect").then(updateTollUI);
@@ -580,8 +606,11 @@ function updateDateUI() {
   const on  = "border-2 rounded-xl py-2.5 text-center font-bold text-sm border-emerald-500 bg-emerald-50 text-emerald-700";
   const off = "border-2 rounded-xl py-2.5 text-center font-bold text-sm border-slate-200 bg-white text-slate-500";
   const tb = document.getElementById("dateTodayBtn");
-  tb.textContent = `本日（${TODAY.getMonth()+1}/${TODAY.getDate()} ${DOW_JA[TODAY.getDay()]}）`;
+  tb.textContent = `本日（${mdw(TODAY)}）`;
   tb.className = dateMode === "today" ? on : off;
+  const yb = document.getElementById("dateYestBtn");
+  yb.textContent = `前日（${mdw(YEST)}）`;
+  yb.className = dateMode === "yesterday" ? on : off;
   document.getElementById("dateOtherBtn").className = dateMode === "other" ? on : off;
   document.getElementById("calWrap").classList.toggle("hidden", dateMode !== "other");
   const d = new Date(selectedDate + "T00:00:00");
@@ -682,6 +711,65 @@ function combineLeg(fromId, toId) {
   const b = document.getElementById(toId).value.trim();
   if (a && b) return `${a}～${b}`;
   return a || b || "";
+}
+
+// ---------- 出勤画面の日付（本日／前日）R-20261009-01 ----------
+function setInDate(m) {
+  inDateMode = m;
+  document.getElementById("inTime").value = "";
+  updateInDateUI();
+  loadEvents(m === "yesterday" ? YEST_STR : TODAY_STR, "inSite");
+}
+function updateInDateUI() {
+  const on  = "border-2 rounded-xl py-2.5 text-center font-bold text-sm border-emerald-500 bg-emerald-50 text-emerald-700";
+  const onN = "border-2 rounded-xl py-2.5 text-center font-bold text-sm border-indigo-500 bg-indigo-50 text-indigo-700";
+  const off = "border-2 rounded-xl py-2.5 text-center font-bold text-sm border-slate-200 bg-white text-slate-500";
+  const y = (inDateMode === "yesterday");
+  const tb = document.getElementById("inDateTodayBtn"), yb = document.getElementById("inDateYestBtn");
+  tb.textContent = `本日（${mdw(TODAY)}）`;  tb.className = y ? off : on;
+  yb.textContent = `前日（${mdw(YEST)}）`;   yb.className = y ? onN : off;
+  document.getElementById("inSiteLabel").textContent = y ? `前日（${mdw(YEST)}）の現場（案件）` : "本日の現場（案件）";
+  document.getElementById("inTimeWrap").classList.toggle("hidden", !y);
+  document.getElementById("btnIn").textContent = y ? `前日（${mdw(YEST)}）の出勤として記録` : "出勤";
+  const hint = document.getElementById("nightHint");
+  const early = new Date().getHours() < NIGHT_HINT_UNTIL;
+  hint.textContent = `🌙 0時を回っています。前日（${mdw(YEST)}）の夜勤の出勤・報告なら「前日」を選んでください。`;
+  hint.classList.toggle("hidden", !(early && !y));
+}
+function punchIn() {
+  if (inDateMode === "yesterday") return punchInYesterday();
+  return punchOnly('in', '現場');
+}
+// 前日の出勤：サーバーの打刻（今の時刻・今日の日付）ではなく、押し忘れの手直し（kintai_fix）と同じ形で
+// 「前日の日付・本人が入れた出勤時刻・退勤は空」の行を足す。GASは変えない。
+// 退勤が空の行は、次に開いたとき「出勤中」として拾われる（kintaiFindOpen_ は今日→昨日を見る）→ 退勤＋報告は前日の日付で入る。
+async function punchInYesterday() {
+  const err = document.getElementById("inError");
+  err.classList.add("hidden");
+  const fail = (t) => { err.textContent = t; err.classList.remove("hidden"); };
+  if (!lineUserId) return fail("LINEアプリ内から開いてください。");
+  const site = document.getElementById("inSite").value || "";
+  const hm = document.getElementById("inTime").value || "";
+  if (!hm) return fail("実際に出勤した時刻を入れてください。");
+  const ev = eventByTitle(site);
+  const dn = (ev && (ev.dn === "N" || ev.dn === "D")) ? ev.dn : (Number(hm.split(":")[0]) >= 16 ? "N" : "D");
+  const btn = document.getElementById("btnIn");
+  btn.disabled = true;
+  try {
+    const res = await fetch(GAS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ type: "kintai_fix", id: "", date: YEST_STR, in: hm, out: "",
+                             site: site, kubun: "現場", dn: dn, name: lineName, userId: lineUserId })
+    });
+    const json = await res.json();
+    if (json.status !== "ok") throw new Error(json.message || "GAS側でエラー");
+    finish(`前日（${mdw(YEST)}）の出勤 ${hm} を記録しました`,
+           (dn === "N" ? "🌙 夜勤" : "☀ 昼勤") + (site ? " / " + site : "") + "　帰りはこの画面から退勤して報告できます");
+  } catch (e) {
+    btn.disabled = false;
+    fail("記録できませんでした。(" + e.message + ")");
+  }
 }
 
 // ---------- 打刻だけ（出勤／退勤のみ） ----------
