@@ -384,6 +384,11 @@ async function render() {
     document.getElementById("jOut").textContent = (!state.open && state.today.out) ? state.today.out : "—";
     document.getElementById("jBtnIn").disabled  = !!state.open;
     document.getElementById("jBtnOut").disabled = !state.open;
+    // ★R-20261022-01：開いたときに押し済みが分かる表示（出勤済み 08:12／退勤済み 17:30）
+    const inT = (state.open && state.open.in) || "";
+    const outT = (!state.open && state.today && state.today.out) ? state.today.out : "";
+    btnLook(document.getElementById("jBtnIn"), inT ? "done" : "idle", inT ? `✓ 出勤済み ${inT}` : "");
+    btnLook(document.getElementById("jBtnOut"), outT ? "done" : "idle", outT ? `✓ 退勤済み ${outT}` : "");
     show("jimuView");
     return;
   }
@@ -736,6 +741,36 @@ function updateInDateUI() {
   hint.textContent = `🌙 0時を回っています。前日（${mdw(YEST)}）の夜勤の出勤・報告なら「前日」を選んでください。`;
   hint.classList.toggle("hidden", !(early && !y));
 }
+// ---------- 出退勤ボタンの見た目（R-20261022-01 2026-10-22 配車部） ----------
+// idle＝元の色／sending＝濃い色＋「送信中…」（押せない）／ok＝緑＋「出勤 08:12 記録しました」（押せない）
+// done＝開いたとき押し済み（薄い緑・押せない）／ng＝赤＋「記録できませんでした。もう一度押してください」（押せる）
+const BTN_BASE = "w-full transition text-white font-bold py-6 rounded-2xl shadow-lg";
+function btnLook(btn, kind, text) {
+  if (!btn) return;
+  if (btn.dataset.label === undefined) {
+    btn.dataset.label = btn.textContent.trim();
+    btn.dataset.cls = btn.className;
+  }
+  const mb = btn.dataset.cls.includes("mb-3") ? " mb-3" : " mb-4";
+  if (kind === "idle") {
+    btn.className = btn.dataset.cls;
+    btn.textContent = text || btn.dataset.label;
+    return;
+  }
+  const look = {
+    sending: "bg-slate-800 text-xl animate-pulse cursor-wait",
+    ok:      "bg-green-700 text-xl ring-4 ring-green-300",
+    done:    "bg-green-100 !text-green-800 text-xl border-2 border-green-400 shadow-none",
+    ng:      "bg-red-600 active:scale-95 text-lg ring-4 ring-red-300",
+  }[kind];
+  btn.className = BTN_BASE + mb + " " + look;
+  btn.textContent = text;
+  btn.disabled = (kind !== "ng");
+}
+function punchBtnFor(type, kubun) {
+  if (kubun === "事務所") return document.getElementById(type === "in" ? "jBtnIn" : "jBtnOut");
+  return (type === "in") ? document.getElementById("btnIn") : null;
+}
 function punchIn() {
   if (inDateMode === "yesterday") return punchInYesterday();
   return punchOnly('in', '現場');
@@ -754,7 +789,8 @@ async function punchInYesterday() {
   const ev = eventByTitle(site);
   const dn = (ev && (ev.dn === "N" || ev.dn === "D")) ? ev.dn : (Number(hm.split(":")[0]) >= 16 ? "N" : "D");
   const btn = document.getElementById("btnIn");
-  btn.disabled = true;
+  if (btn.disabled) return;                                   // 二度押し防止
+  btnLook(btn, "sending", "送信中…");
   try {
     const res = await fetch(GAS_URL, {
       method: "POST",
@@ -764,10 +800,13 @@ async function punchInYesterday() {
     });
     const json = await res.json();
     if (json.status !== "ok") throw new Error(json.message || "GAS側でエラー");
+    btnLook(btn, "ok", `✓ 前日の出勤 ${hm} 記録しました`);
+    await sleep(2500);                                        // 緑のボタンを見せてから完了画面へ
     finish(`前日（${mdw(YEST)}）の出勤 ${hm} を記録しました`,
-           (dn === "N" ? "🌙 夜勤" : "☀ 昼勤") + (site ? " / " + site : "") + "　帰りはこの画面から退勤して報告できます");
+           (dn === "N" ? "🌙 夜勤" : "☀ 昼勤") + (site ? " / " + site : "") + "　帰りはこの画面から退勤して報告できます",
+           "", 4000);
   } catch (e) {
-    btn.disabled = false;
+    btnLook(btn, "ng", "✕ 記録できませんでした。もう一度押してください");
     fail("記録できませんでした。(" + e.message + ")");
   }
 }
@@ -780,6 +819,9 @@ async function punchOnly(type, kubun) {
   if (!lineUserId) { err.textContent = "LINEアプリ内から開いてください。"; err.classList.remove("hidden"); return; }
 
   const site = (type === "in" && kubun === "現場") ? (document.getElementById("inSite").value || "") : "";
+  const btn = punchBtnFor(type, kubun);
+  if (btn && btn.disabled) return;                            // 二度押し防止（送信中・記録済みは押せない）
+  btnLook(btn, "sending", "送信中…");
   try {
     const res = await fetch(GAS_URL, {
       method: "POST",
@@ -789,9 +831,12 @@ async function punchOnly(type, kubun) {
     });
     const json = await res.json();
     if (json.status !== "ok") throw new Error(json.message || "GAS側でエラー");
+    btnLook(btn, "ok", `✓ ${type === "in" ? "出勤" : "退勤"} ${json.time} 記録しました`);
+    await sleep(2500);                                        // 緑のボタンを見せてから完了画面へ
     finish((type === "in" ? "出勤 " : "退勤 ") + json.time + " を記録しました",
-           (json.dn === "N" ? "🌙 夜勤" : "☀ 昼勤") + (json.site ? " / " + json.site : ""));
+           (json.dn === "N" ? "🌙 夜勤" : "☀ 昼勤") + (json.site ? " / " + json.site : ""), "", 4000);
   } catch (e) {
+    btnLook(btn, "ng", "✕ 記録できませんでした。もう一度押してください");
     err.textContent = "打刻できませんでした。(" + e.message + ")";
     err.classList.remove("hidden");
   }
@@ -893,14 +938,14 @@ document.getElementById("reportForm").addEventListener("submit", async (ev) => {
   }
 });
 
-function finish(text, sub, warn) {
+function finish(text, sub, warn, closeMs) {
   document.getElementById("doneText").textContent = text;
   document.getElementById("doneSub").textContent = sub || "";
   const w = document.getElementById("doneWarn");
   if (warn) { w.textContent = "⚠ " + warn; w.classList.remove("hidden"); }
   else w.classList.add("hidden");
   show("doneView");
-  setTimeout(() => { if (liff.isInClient && liff.isInClient()) liff.closeWindow(); }, warn ? 6000 : 2200);
+  setTimeout(() => { if (liff.isInClient && liff.isInClient()) liff.closeWindow(); }, warn ? 6000 : (closeMs || 2200));
 }
 
 // ---------- 手直し ----------
