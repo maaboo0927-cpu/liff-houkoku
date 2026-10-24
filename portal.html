@@ -7,17 +7,52 @@
 <title>社内ポータル</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=M+PLUS+1p:wght@400;500;700;800;900&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
-  .st-使用{background:#1d4ed8;color:#fff} .st-置放{background:#93c5fd;color:#1e3a8a} .st-空き{background:#f1f5f9;color:#94a3b8} .st-不明{background:#fef3c7;color:#92400e}
-  .cell{min-width:2.4rem;text-align:center;border-radius:.375rem;font-size:.7rem;padding:.15rem .2rem}
+  /* 見た目＝「C改」（R-20261021-04・2026-10-23 配車部）。色：背景#ECEEF1／濃色#34363A／差し色#A9D4F5／補助#5A5D63（濃色の上は#C8CBD0）／罫線#C8CBD0・#E1E4E8 */
+  :root{--bg:#ECEEF1;--ink:#34363A;--acc:#A9D4F5;--sub:#5A5D63;--sub2:#C8CBD0;--line:#E1E4E8}
+  body{background:var(--bg);color:var(--ink);font-family:'M PLUS 1p',system-ui,sans-serif;font-size:14px;margin:0}
+  .num{font-family:Oswald,sans-serif;font-weight:700;line-height:1.05}
+  .hd{background:var(--ink);color:#fff;position:sticky;top:0;z-index:30}
+  .hd-in{max-width:1280px;margin:0 auto;padding:0 24px;min-height:68px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;box-sizing:border-box}
+  .logo{background:var(--acc);color:var(--ink);font-family:Oswald,sans-serif;font-weight:700;font-size:18px;padding:4px 10px;letter-spacing:.04em}
+  .stripe{height:6px;background:repeating-linear-gradient(-45deg,var(--acc) 0 14px,var(--ink) 14px 28px)}
+  .wrap{max-width:1280px;margin:0 auto;padding:24px;box-sizing:border-box;display:flex;flex-direction:column;gap:20px}
+  .nav{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));gap:8px}
+  .nb{min-height:56px;border:2px solid var(--ink);background:#fff;color:var(--ink);font-weight:800;font-size:15px;cursor:pointer;text-align:left;padding:0 16px;font-family:inherit}
+  .nb:hover,.nb:focus-visible{background:var(--ink);color:var(--acc)}
+  .row2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:20px}
+  .card{background:#fff;border:2px solid var(--ink);padding:24px;box-sizing:border-box;min-width:0}
+  .card.blue{background:var(--acc)} .card.dark{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .card h2{margin:0;font-size:15px;font-weight:900;letter-spacing:.1em}
+  .card.dark h2,.card.dark .more{color:var(--acc)}
+  .bh{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+  .more{font-weight:800;font-size:13px;min-height:44px;display:inline-flex;align-items:center;cursor:pointer;background:none;border:0;color:var(--ink);font-family:inherit;padding:0}
+  .asof{font-size:11px;color:var(--sub);margin:2px 0 10px} .card.dark .asof{color:var(--sub2)}
+  .tag{display:inline-block;background:var(--ink);color:#fff;padding:6px 12px;font-weight:800;font-size:13px;margin:0 6px 6px 0}
+  .tagw{display:inline-block;border:2px solid var(--ink);padding:3px 8px;font-size:12px;font-weight:800;margin:0 6px 6px 0}
+  .q4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:2px solid var(--ink);margin-top:16px}
+  .q4>div{padding:10px 8px 0} .q4>div+div{border-left:1px solid var(--sub2)} .q4>div:first-child{padding-left:0}
+  .lbl{font-size:11px;color:var(--sub)} .card.dark .lbl{color:var(--sub2)}
+  .kg{display:grid;gap:6px;font-size:12px}
+  .kc{height:32px;border-radius:6px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding:0 3px}
+  .lg{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-top:12px}
+  .lg span.sw{display:inline-block;width:14px;height:14px;border-radius:4px;box-sizing:border-box;vertical-align:-2px;margin-right:6px}
+  .ticks{display:grid;grid-template-columns:repeat(20,minmax(0,1fr));gap:2px;margin-top:8px} .ticks div{height:10px}
+  .r3{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:24px;margin-top:4px}
+  .cell{min-width:2.4rem;text-align:center;border-radius:6px;font-size:.7rem;padding:.15rem .2rem;box-sizing:border-box}
+  @media (max-width:640px){.hd-in,.wrap{padding-left:16px;padding-right:16px}.wrap{padding-top:16px}.card{padding:18px}
+    .q4{grid-template-columns:repeat(2,minmax(0,1fr))}.q4>div:nth-child(3){border-left:0;padding-left:0}.big56{font-size:44px!important}}
 </style>
 </head>
 <!--
+  2026-10-23 見た目を「C改」に変更（R-20261021-04・配車部）。数字・ブロック・役割の出し分けは変えていない。変更前＝_旧版\LIFF報告フォーム\ポータル\portal_backup_preR20261021-04_20261023.html
   社内ポータル 第1段階（R-20261002-01）— 2026-10-02 配車部 作成
   ★このファイルには数字を書かない。数字はすべて、LINEで本人確認した後に「社内ポータルAPI」（GAS）から受け取る。
   ★既存の index.html（報告フォーム）・admin.html（報告状況）とは別ファイル。どちらにも手を入れていない。
 -->
-<body class="bg-slate-100 min-h-screen text-slate-800">
+<body class="min-h-screen">
 
 <!-- ★設定（導入手順 §2・§3 で書き換える） -->
 <script>
@@ -25,36 +60,31 @@ const PORTAL_LIFF_ID = "2010603519-GkVndaXL";        // 例 2010603519-xxxxxxxx�
 const PORTAL_API_URL = "https://script.google.com/macros/s/AKfycbx5A7I_R5XotjeHYrcQiZ1MXuGQZdf8CRZbBY9NWlrXRN4pWVmXEFql6-osgS3I2Wgj/exec"; // 導入手順 §3 のデプロイで出る https://script.google.com/macros/s/.../exec
 </script>
 
-<header class="bg-slate-800 text-white sticky top-0 z-30">
-  <div class="max-w-6xl mx-auto px-4 h-12 flex items-center justify-between">
-    <h1 class="font-bold">社内ポータル</h1>
-    <div class="flex items-center gap-3">
-      <span id="me" class="text-xs text-slate-300"></span>
-      <button id="menuBtn" class="md:hidden text-2xl leading-none px-1" aria-label="メニュー" onclick="toggleMenu()">☰</button>
+<header class="hd">
+  <div class="hd-in">
+    <div style="display:flex;align-items:center;gap:14px"><div class="logo">AF</div><h1 style="margin:0;font-weight:900;font-size:19px;letter-spacing:.1em">社内ポータル</h1></div>
+    <div style="display:flex;align-items:center;gap:16px;font-size:13px">
+      <span id="now" class="num" style="font-size:15px;color:var(--acc);font-weight:500"></span>
+      <span id="me" style="border:1px solid #6A6D73;padding:6px 12px"></span>
     </div>
   </div>
+  <div class="stripe"></div>
 </header>
 
-<!-- スマホ：☰メニュー -->
-<div id="mobileMenu" class="hidden md:hidden fixed top-12 right-2 z-40 bg-white rounded-xl shadow-lg p-2 w-48"></div>
-
-<div class="max-w-6xl mx-auto px-4 py-4 flex gap-4">
-  <!-- PC：左サイドのボタン（③配車と、今後の追加項目） -->
-  <nav id="side" class="hidden md:flex flex-col gap-2 w-40 shrink-0"></nav>
-
-  <main class="flex-1 min-w-0">
-    <div id="loading" class="bg-white rounded-2xl p-8 text-center shadow text-slate-500">LINEで本人確認しています…</div>
-    <div id="msg" class="hidden bg-amber-50 border border-amber-300 rounded-2xl p-5 shadow text-sm text-amber-900"></div>
-    <div id="grid" class="hidden grid grid-cols-1 md:grid-cols-2 gap-4"></div>
-  </main>
+<div class="wrap">
+  <!-- メニュー：大きめボタンの横並び（③①②④⑤。スマホは折り返す＝☰は廃止） -->
+  <nav id="nav" class="nav" aria-label="メニュー"></nav>
+  <div id="loading" class="card" style="text-align:center;color:var(--sub)">LINEで本人確認しています…</div>
+  <div id="msg" class="hidden card" style="font-size:13px"></div>
+  <div id="grid" class="hidden" style="flex-direction:column;gap:20px"></div>
 </div>
 
 <!-- ポップアップ（明細・サイドの項目） -->
 <div id="modal" class="hidden fixed inset-0 z-50 bg-black/40 flex items-start md:items-center justify-center p-2 md:p-6" onclick="if(event.target===this)closeModal()">
-  <div class="bg-white rounded-2xl shadow-xl w-full max-w-5xl max-h-[92vh] flex flex-col">
-    <div class="flex items-center justify-between px-4 py-3 border-b">
-      <div><h2 id="mTitle" class="font-bold"></h2><p id="mAsOf" class="text-xs text-slate-400"></p></div>
-      <button class="text-2xl leading-none px-2 text-slate-500" onclick="closeModal()" aria-label="閉じる">×</button>
+  <div class="bg-white w-full max-w-5xl max-h-[92vh] flex flex-col" style="border:2px solid #34363A">
+    <div class="flex items-center justify-between px-4 py-3" style="background:#34363A;color:#fff;border-bottom:6px solid #A9D4F5">
+      <div><h2 id="mTitle" class="font-bold"></h2><p id="mAsOf" class="text-xs" style="color:#C8CBD0"></p></div>
+      <button class="text-2xl leading-none px-2" style="color:#A9D4F5" onclick="closeModal()" aria-label="閉じる">×</button>
     </div>
     <div id="mBody" class="p-4 overflow-auto text-sm"></div>
   </div>
@@ -107,40 +137,48 @@ async function start(){
   }
 }
 
-// ─── 画面の骨組み：メイン＝place:"main"、サイド／☰＝place:"side" ───
+// ─── 画面の骨組み（R-20261021-04「C改」）：メニュー＝全ブロック（③①②④⑤の順）、メイン＝place:"main" を決まった枠に置く ───
+//   ブロックの id・役割による出し分け・数字の出し方は変えていない（並べ方と見た目だけ）
+const NAV_ORDER = ["haisha", "sales", "rules", "report", "kado"];
+const LAYOUT = [["report", "sales"], ["kado"], ["rules"]];          // 左右2列 → 全幅 → 全幅
+const CARD_CLS = { report: "card blue", sales: "card", kado: "card", rules: "card dark" };
 function renderShell(data){
   document.getElementById("loading").classList.add("hidden");
-  const grid = document.getElementById("grid"); grid.innerHTML = ""; grid.classList.remove("hidden");
-  BLOCKS.filter(b => b.place === "main").forEach(b => {
+  const n = new Date();
+  document.getElementById("now").textContent = `${n.getFullYear()}.${String(n.getMonth()+1).padStart(2,"0")}.${String(n.getDate()).padStart(2,"0")} ${["SUN","MON","TUE","WED","THU","FRI","SAT"][n.getDay()]} ${String(n.getHours()).padStart(2,"0")}:${String(n.getMinutes()).padStart(2,"0")}`;
+  const grid = document.getElementById("grid"); grid.innerHTML = ""; grid.classList.remove("hidden"); grid.style.display = "flex";
+  const mains = BLOCKS.filter(b => b.place === "main"), used = new Set();
+  const put = (parent, b) => {
     const el = document.createElement("section");
-    el.id = "blk-" + b.id;
-    el.className = "bg-white rounded-2xl shadow p-4 " + (b.ready ? "cursor-pointer hover:ring-2 hover:ring-slate-300" : "");
-    if (b.ready) el.onclick = () => openDetail(b);
-    grid.appendChild(el);
-    drawBlock(b, data[b.id] || {});
+    el.id = "blk-" + b.id; el.className = CARD_CLS[b.id] || "card";
+    parent.appendChild(el); used.add(b.id); drawBlock(b, data[b.id] || {});
+  };
+  LAYOUT.forEach(ids => {
+    const bs = ids.map(id => mains.find(b => b.id === id)).filter(Boolean);
+    if (!bs.length) return;
+    let parent = grid;
+    if (ids.length > 1) { parent = document.createElement("div"); parent.className = "row2"; grid.appendChild(parent); }
+    bs.forEach(b => put(parent, b));
   });
-  const side = document.getElementById("side"), mm = document.getElementById("mobileMenu");
-  side.innerHTML = ""; mm.innerHTML = "";
-  BLOCKS.filter(b => b.place === "side").forEach(b => {
-    const mk = cls => { const x = document.createElement("button"); x.className = cls; x.textContent = b.title; x.onclick = () => { mm.classList.add("hidden"); openDetail(b); }; return x; };
-    side.appendChild(mk("bg-white rounded-xl shadow px-3 py-3 text-left font-bold hover:bg-slate-50"));
-    mm.appendChild(mk("block w-full text-left px-3 py-2 rounded-lg hover:bg-slate-100 font-bold"));
+  mains.filter(b => !used.has(b.id)).forEach(b => put(grid, b));     // 枠の決まっていないブロック（今後の追加）は全幅で下へ
+  const nav = document.getElementById("nav"); nav.innerHTML = "";
+  const rank = id => { const k = NAV_ORDER.indexOf(id); return k < 0 ? 99 : k; };
+  BLOCKS.filter(b => b.ready !== false).slice().sort((a, b) => rank(a.id) - rank(b.id)).forEach(b => {
+    const x = document.createElement("button"); x.className = "nb"; x.textContent = b.title; x.onclick = () => openDetail(b); nav.appendChild(x);
   });
 }
-function toggleMenu(){ document.getElementById("mobileMenu").classList.toggle("hidden"); }
 
 function head(b, v){
-  return `<div class="flex items-baseline justify-between gap-2 mb-2">
-      <h2 class="font-bold">${esc(b.title)}</h2>
-      ${b.ready ? '<span class="text-xs text-slate-400 shrink-0">クリックで明細 ›</span>' : ""}</div>
-    <p class="text-[11px] text-slate-400 mb-3">${v && v.asOf ? esc(v.asOf) : ""}</p>`;
+  return `<div class="bh"><h2>${esc(b.title)}</h2>${b.ready ? `<button class="more" onclick="openDetailById('${esc(b.id)}')">明細 →</button>` : ""}</div>
+    <p class="asof">${v && v.asOf ? esc(v.asOf) : ""}</p>`;
 }
+function openDetailById(id){ const b = BLOCKS.find(x => x.id === id); if (b) openDetail(b); }
 
 function drawBlock(b, v){
   const el = document.getElementById("blk-" + b.id);
-  if (!b.ready || v.ready === false) { el.innerHTML = head(b) + `<p class="text-slate-400 text-sm">準備中（${esc(b.owner)}）</p>`; return; }
-  if (v.error) { el.innerHTML = head(b, v) + `<p class="text-red-600 text-sm">読み込みエラー：${esc(v.error)}</p>`; return; }
-  if (v.empty) { el.innerHTML = head(b, v) + `<p class="text-slate-400 text-sm">${esc(v.empty)}</p>`; return; }
+  if (!b.ready || v.ready === false) { el.innerHTML = head(b) + `<p class="lbl">準備中（${esc(b.owner)}）</p>`; return; }
+  if (v.error) { el.innerHTML = head(b, v) + `<p style="color:#b91c1c;font-size:13px">読み込みエラー：${esc(v.error)}</p>`; return; }
+  if (v.empty) { el.innerHTML = head(b, v) + `<p class="lbl">${esc(v.empty)}</p>`; return; }
   const f = MAIN[b.id]; el.innerHTML = head(b, v) + (f ? f(v) : "");
 }
 
@@ -166,23 +204,57 @@ function closeModal(){ document.getElementById("modal").classList.add("hidden");
 // ─── ブロックごとの描き方（ブロックを足すときは MAIN と DETAIL に1つずつ） ───
 function chip(t, cls){ return `<span class="inline-block border rounded-full px-2 py-0.5 text-xs font-bold mr-1 mb-1 ${cls}">${esc(t)}</span>`; }
 
+// ⑤のマス＝その案件の Googleカレンダー色（R-20261021-04）。cal＝colorId（PC便 portal_board_export.py がカレンダーと現場名で照合）
+const CAL = { "1":["#7986CB","ラベンダー"], "2":["#33B679","セージ"], "3":["#8E24AA","ブドウ"], "4":["#E67C73","フラミンゴ"], "5":["#F6BF26","バナナ"],
+  "6":["#F4511E","ミカン"], "7":["#039BE5","ピーコック"], "8":["#616161","グラファイト"], "9":["#3F51B5","ブルーベリー"], "10":["#0B8043","バジル"], "11":["#D50000","トマト"] };
+const CAL_FG = { "5":"#34363A", "7":"#0B1A26", "6":"#1F0A03" };
+function calFg(id){
+  if (CAL_FG[id]) return CAL_FG[id];
+  const h = (CAL[id] || ["#616161"])[0], r = parseInt(h.substr(1,2),16), g = parseInt(h.substr(3,2),16), b = parseInt(h.substr(5,2),16);
+  return (r*299 + g*587 + b*114) / 1000 > 150 ? "#34363A" : "#FFFFFF";
+}
+// 1マスの見た目 → {t, st}
+function kcell(x){
+  x = x || { status:"不明" };
+  if (x.ng) { return { t: x.ng, st: `background:${CAL["6"][0]};color:${CAL_FG["6"]}` }; }
+  if (x.status === "使用") {
+    if (x.cal && CAL[x.cal]) return { t: x.label || "使用", st: `background:${CAL[x.cal][0]};color:${calFg(x.cal)}` };
+    return { t: x.label || "使用", st: "background:#fff;color:#34363A;border:2px dashed #5A5D63" };
+  }
+  if (x.status === "置放") { const c = (CAL[x.cal] || CAL["8"])[0]; return { t: "置放", st: `background:#fff;color:#34363A;border:3px solid ${c}` }; }
+  if (x.status === "空き") return { t: "空き", st: "background:#F2F3F5;color:#5A5D63" };
+  return { t: x.status, st: "background:#fef3c7;color:#92400e" };
+}
+const KADO_LEGEND = [["5","バナナ 確定"],["9","ブルーベリー 確定"],["8","グラファイト 自社工事 確定"],["7","ピーコック 未確定"],["3","ブドウ 未確定"],["6","ミカン 使用不可"]]
+  .map(([k, t]) => `<span><span class="sw" style="background:${CAL[k][0]}"></span>${t}</span>`).join("") +
+  `<span><span class="sw" style="background:#fff;border:3px solid #616161"></span>置放</span><span><span class="sw" style="background:#F2F3F5;border:1px solid #C8CBD0"></span>空き</span><span><span class="sw" style="background:#fff;border:2px dashed #5A5D63"></span>色なし（カレンダーと照合できず）</span>`;
+
 function statusGrid(v, detail){
   const row = (u) => `<tr><td class="pr-2 py-0.5 font-bold whitespace-nowrap">${esc(u.no)}${detail && u.plate ? `<span class="block text-[10px] font-normal text-slate-400">${esc(u.plate)}</span>` : ""}</td>` +
-    v.dates.map(d => { const x = u.days[d] || {status:"不明"};
+    v.dates.map(d => { const x = u.days[d] || {status:"不明"}, k = kcell(x);
       const who = detail ? (x.D || []).map(y => "昼 " + (y.name || y.who) + " " + y.site).concat((x.N || []).map(y => "夜 " + (y.name || y.who) + " " + y.site)).join("\n") + (x.hold ? "置放 " + x.hold : "") : "";
-      return `<td class="p-0.5"><div class="cell st-${esc(x.status)}" title="${esc(who)}">${esc(x.status)}</div>${detail && who ? `<div class="text-[10px] text-slate-500 leading-tight whitespace-pre-line max-w-[8rem]">${esc(who)}</div>` : ""}</td>`; }).join("") + "</tr>";
-  const tbl = (title, list) => `<p class="text-xs font-bold text-slate-500 mt-2 mb-1">${title}</p><div class="overflow-x-auto"><table class="text-xs"><thead><tr><th></th>${v.dates.map(d => `<th class="px-1 font-normal text-slate-500 whitespace-nowrap">${md(d)}</th>`).join("")}</tr></thead><tbody>${list.map(row).join("")}</tbody></table></div>`;
-  return tbl(`機械（${v.total.m}台）`, v.machines) + tbl(`回送車（${v.total.v}台）`, v.vehicles);
+      return `<td class="p-0.5"><div class="cell" style="${k.st}" title="${esc(who)}">${esc(x.status === "使用" ? (x.label || "使用") : k.t)}</div>${detail && who ? `<div class="text-[10px] text-slate-500 leading-tight whitespace-pre-line max-w-[8rem]">${esc(who)}</div>` : ""}</td>`; }).join("") + "</tr>";
+  const tbl = (title, list) => `<p class="text-xs font-bold text-slate-500 mt-2 mb-1">${title}</p><div class="overflow-x-auto"><table class="text-xs"><thead><tr><th></th>${v.dates.map(d => `<th class="px-1 font-normal text-slate-500 whitespace-nowrap">${detail ? md(d) : md(d).replace("(", "<br>(")}</th>`).join("")}</tr></thead><tbody>${list.map(row).join("")}</tbody></table></div>`;
+  return (detail ? `<div class="lg" style="margin:0 0 8px">${KADO_LEGEND}</div>` : "") + tbl(`機械（${v.total.m}台）`, v.machines) + tbl(`回送車（${v.total.v}台）`, v.vehicles);
+}
+
+// ⑤メイン＝B案の表型：左列に番号、上に日付と「機械 n/N・車 n/N」（数は GAS の count＝今と同じ数え方）
+function kadoTable(v){
+  const n = v.dates.length;
+  const hd = v.dates.map(d => `<div style="text-align:center;padding-bottom:6px"><div style="font-weight:800">${md(d)}</div><div class="lbl">機械 ${v.count[d].m}/${v.total.m} · 車 ${v.count[d].v}/${v.total.v}</div></div>`).join("");
+  const rows = (list, color) => list.map(u => `<span class="num" style="font-weight:600;font-size:15px;display:flex;align-items:center;color:${color}">${esc(u.no)}</span>` +
+    v.dates.map(d => { const k = kcell(u.days[d]); return `<div class="kc" style="${k.st}" title="${esc(k.t)}">${esc(k.t)}</div>`; }).join("")).join("");
+  return `<div style="overflow-x:auto;margin-top:16px"><div class="kg" style="min-width:${64 + n * 58}px;grid-template-columns:64px repeat(${n},minmax(0,1fr))"><span></span>${hd}${rows(v.machines, "#34363A")}${rows(v.vehicles, "#5A5D63")}</div></div>`;
 }
 
 const MAIN = {
-  report: v => `<div class="flex gap-4 mb-3">
-      <div><p class="text-3xl font-bold">${v.missing.length}</p><p class="text-xs text-slate-500">今日の未報告 / 名簿${v.rosterCount}名</p></div>
-      <div><p class="text-3xl font-bold text-emerald-600">${v.reportedCount}</p><p class="text-xs text-slate-500">報告済み</p></div>
-      <div><p class="text-3xl font-bold text-sky-600">${v.working.length}</p><p class="text-xs text-slate-500">出勤中</p></div></div>
-    <div>${v.missing.map(n => chip(n, "bg-red-50 text-red-700 border-red-200")).join("") || '<span class="text-emerald-600 text-sm font-bold">全員報告済み</span>'}</div>
-    <p class="text-[11px] text-slate-400 mt-1">休みの人も未報告に含まれます。</p>`,
-  kado: v => `<div class="flex gap-2 mb-1 text-xs">${v.dates.map(d => `<div class="flex-1 bg-slate-50 rounded-lg p-2 text-center"><p class="text-slate-500">${md(d)}</p><p><b class="text-lg">${v.count[d].m}</b>/${v.total.m} 機械</p><p><b>${v.count[d].v}</b>/${v.total.v} 回送車</p></div>`).join("")}</div>` + statusGrid(v, false)
+  report: v => `<div class="num" style="font-size:96px">${v.missing.length}<span style="font-size:28px;margin-left:8px">/ ${v.rosterCount}名</span></div>
+    <div style="margin-top:10px">${v.missing.map(n => `<span class="tag">${esc(n)}</span>`).join("") || '<b>全員報告済み</b>'}</div>
+    <div style="display:flex;gap:24px;font-size:13px;font-weight:700;border-top:2px solid #34363A;padding-top:10px;margin-top:4px">
+      <span>報告済み <span class="num" style="font-size:20px">${v.reportedCount}</span></span><span>出勤中 <span class="num" style="font-size:20px">${v.working.length}</span></span></div>
+    <div style="font-size:11px;margin-top:8px">休みの人も未報告に含まれます。</div>`,
+  kado: v => `<div class="bh" style="margin-top:-6px"><span class="lbl" style="font-size:12px">マスの色＝その案件のカレンダー色</span></div><div class="lg">${KADO_LEGEND}</div>` + kadoTable(v) +
+    `<div class="lbl" style="margin-top:10px">枠だけのマス＝置放（色は置いている現場の案件色。取れないときはグラファイト）${v.calNote ? "／" + esc(v.calNote) : ""}</div>`
 };
 
 const DETAIL = {
@@ -224,31 +296,35 @@ function salesHead(m){
 }
 const SALES_NOTE = `<p class="text-[11px] text-slate-400 mt-2">月の前半は回送が少なく出ます（距離・回送の入力待ち）。単価未登録の行は0円で数えています。</p>`;
 
+// ①②のメイン（R-20261021-04「C改」）。数字は今までと同じ項目をそのまま出す（並べ方と見た目だけ変更）
 Object.assign(MAIN, {
   sales: v => {
-    const m = v.main;
-    return salesHead(m) +
-      `<table ${TBL}><tbody>${(m.top || []).map((c, i) => `<tr class="border-b"><td class="py-1 pr-1 text-slate-400">${i + 1}</td><td class="pr-1">${esc(c.name)}</td>${TDR(c.count + "件")}${TDR(yen(c.sales))}</tr>`).join("")}</tbody></table>` +
-      (v.warn ? `<p class="text-red-600 text-xs mt-1">${esc(v.warn)}</p>` : "") + SALES_NOTE;
+    const m = v.main, p = m.prev_same_point;
+    let prev = "";
+    if (p) { const d = m.sales - p.sales;
+      prev = `<div style="font-size:13px;font-weight:700;margin-top:6px">前月同時点（${ymJ(p.month)}〜${p.upto_day || "末"}日）<span class="num" style="background:#34363A;color:#A9D4F5;padding:2px 8px;font-weight:500">${d >= 0 ? "+" : ""}${yen(d)}</span></div>`; }
+    const q = (t, n) => `<div><div class="lbl">${t}</div><div class="num" style="font-size:17px;font-weight:500">${yen(n)}</div></div>`;
+    return `<div class="lbl">売上（稼働＋回送・税抜）</div><div class="num big56" style="font-size:56px">¥${yen(m.sales)}</div>${prev}
+      <div class="q4">${q("稼働", m.kado)}${q("回送", m.kaiso)}${q("高速", m.kosoku)}${q("駐車", m.chusha)}</div>
+      <div class="lbl" style="margin-top:6px">参考：請求額（4つの合計）${yen(m.total)}円・稼働 ${m.count}件</div>
+      <div style="display:flex;flex-direction:column;margin-top:12px">${(m.top || []).map((c, i) => `<div style="display:flex;gap:12px;align-items:center;padding:7px 0;border-top:1px solid #E1E4E8"><span class="num" style="font-size:16px;width:18px;font-weight:500">${i + 1}</span><span style="flex:1;font-weight:700;min-width:0">${esc(c.name)}</span><span class="lbl" style="font-size:12px">${c.count}件</span><span class="num" style="font-size:16px;min-width:90px;text-align:right;font-weight:500">${yen(c.sales)}</span></div>`).join("")}</div>
+      <div style="margin-top:12px">${m.tanka_missing ? `<span class="tagw">⚠ 単価未登録 ${m.tanka_missing}件</span>` : ""}${m.uncoded ? `<span class="tagw">得意先コード無し ${m.uncoded}件</span>` : ""}</div>` +
+      (v.warn ? `<p style="color:#b91c1c;font-size:12px">${esc(v.warn)}</p>` : "") + `<p class="lbl" style="margin-top:6px">月の前半は回送が少なく出ます（距離・回送の入力待ち）。単価未登録の行は0円で数えています。</p>`;
   },
   rules: v => {
+    const box = (t, big, small) => `<div><div class="lbl" style="font-size:12px">${t}</div>${big}<div class="lbl" style="font-size:12px;margin-top:6px">${small}</div></div>`;
     let h = "";
     if (v.minarai && !v.minarai.empty) {
-      h += `<p class="text-xs font-bold text-slate-500 mb-1">見習い（60クラス）</p>` + v.minarai.people.map(p =>
-        `<div class="flex items-baseline gap-2 mb-2"><b>${esc(p.name)}</b><span class="text-2xl font-bold">${p.total}</span><span class="text-xs text-slate-500">／${p.goal}・残り ${p.remain}・今月 ${p.this_month}</span></div>`).join("");
-    } else if (v.minarai) h += `<p class="text-xs text-slate-400">見習い：${esc(v.minarai.empty)}</p>`;
-    if (v.kintai && !v.kintai.empty) {
-      const k = v.kintai;
-      h += `<p class="text-xs font-bold text-slate-500 mt-2">出退勤の打刻がなかった日 <span class="font-normal">（${md(k.from)}〜${md(k.to)}）</span></p>
-        <p class="text-sm">出勤 <b class="text-lg">${k.fy.inN}</b>日・退勤 <b class="text-lg">${k.fy.outN}</b>日（${k.fy.people}人）<span class="text-xs text-slate-500">　今月 出勤${k.month.inN}・退勤${k.month.outN}</span></p>`;
-    } else if (v.kintai) h += `<p class="text-xs text-slate-400 mt-2">出退勤：${esc(v.kintai.empty)}</p>`;
-    if (v.kyori && !v.kyori.empty) {
-      const k = v.kyori;
-      h += `<p class="text-xs font-bold text-slate-500 mt-2">距離報告がなかった回数 <span class="font-normal">（回送担当の日・${md(k.from)}〜${md(k.to)}）</span></p>
-        <p class="text-sm"><b class="text-lg">${k.fy.n}</b>回（${k.fy.people}人）<span class="text-xs text-slate-500">　今月 ${k.month.n}回</span></p>`;
-    } else if (v.kyori) h += `<p class="text-xs text-slate-400 mt-2">距離報告：${esc(v.kyori.empty)}</p>`;
-    if (v.unknown && v.unknown.length) h += `<p class="text-[11px] text-slate-400 mt-2">名簿で突き合わせできない人は数えていません（${v.unknown.length}人）。</p>`;
-    return h;
+      h += v.minarai.people.map(p => { const f = Math.max(0, Math.min(20, Math.round(p.total / (p.goal || 100) * 20)));
+        return box(`見習い ${esc(p.name)}（60クラス）`, `<div class="num" style="font-size:44px">${p.total}<span style="font-size:20px;color:#C8CBD0"> / ${p.goal}</span></div><div class="ticks">${Array.from({length:20}, (_, i) => `<div style="background:${i < f ? "#A9D4F5" : "#4E5157"}"></div>`).join("")}</div>`, `残り${p.remain} · 今月${p.this_month}`); }).join("");
+    } else if (v.minarai) h += box("見習い", "", esc(v.minarai.empty));
+    if (v.kintai && !v.kintai.empty) { const k = v.kintai;
+      h += box(`出退勤の打刻なし（出勤/退勤・${md(k.from)}〜${md(k.to)}）`, `<div class="num" style="font-size:44px;color:#A9D4F5">${k.fy.inN} / ${k.fy.outN}<span style="font-size:20px"> 日</span></div>`, `${k.fy.people}人 · 今月 ${k.month.inN}/${k.month.outN}`);
+    } else if (v.kintai) h += box("出退勤の打刻なし", "", esc(v.kintai.empty));
+    if (v.kyori && !v.kyori.empty) { const k = v.kyori;
+      h += box(`距離報告なし（回送担当の日・${md(k.from)}〜${md(k.to)}）`, `<div class="num" style="font-size:44px;color:#A9D4F5">${k.fy.n}<span style="font-size:20px"> 回</span></div>`, `${k.fy.people}人 · 今月 ${k.month.n}`);
+    } else if (v.kyori) h += box("距離報告なし", "", esc(v.kyori.empty));
+    return `<div class="r3">${h}</div>` + (v.unknown && v.unknown.length ? `<p class="lbl" style="margin-top:10px">名簿で突き合わせできない人は数えていません（${v.unknown.length}人）。</p>` : "");
   }
 });
 
