@@ -273,6 +273,8 @@
       報告だけ送る（退勤しない）
     </button>
     <button type="button" id="backBtn" onclick="render()" class="hidden w-full text-sm text-slate-500 underline py-2">もどる</button>
+    <!-- ★R-20261111-01（2026-11-11 配車部・案A）：出勤中の報告画面からも手直しを開けるようにする。後追い報告の画面には出さない -->
+    <button type="button" id="openFixBtn" onclick="openFix()" class="hidden w-full text-sm text-slate-500 underline py-2">押し忘れ・時刻の手直し</button>
   </form>
 
   <!-- ===== 手直し画面 ===== -->
@@ -280,6 +282,8 @@
     <div class="bg-white rounded-2xl p-4 shadow mb-4">
       <p class="text-sm font-bold text-slate-700 mb-1">直近14日の打刻</p>
       <p class="text-xs text-slate-400">時刻を直して「保存」。押し忘れた日は「この日を追加」から。</p>
+      <!-- ★R-20261111-01：出勤中に開いたときだけ出す（誤って退勤になるのを防ぐ） -->
+      <p id="fixOpenNote" class="hidden mt-2 text-xs font-bold px-3 py-2 rounded-xl text-amber-800 bg-amber-50 border border-amber-200"></p>
     </div>
     <div id="fixList" class="space-y-3"></div>
     <p id="fixError" class="hidden text-sm text-red-600 font-bold text-center my-3"></p>
@@ -389,6 +393,14 @@ async function render() {
     const outT = (!state.open && state.today && state.today.out) ? state.today.out : "";
     btnLook(document.getElementById("jBtnIn"), inT ? "done" : "idle", inT ? `✓ 出勤済み ${inT}` : "");
     btnLook(document.getElementById("jBtnOut"), outT ? "done" : "idle", outT ? `✓ 退勤済み ${outT}` : "");
+    // ★R-20261109-10（2026-11-10 配車部）：押せない状態でも黙らない。押したら理由を jError に出す
+    if (inT) blockWithReason(document.getElementById("jBtnIn"),
+      `今日の出勤はもう記録しています（${inT}）。時刻を直すときは下の「押し忘れ・時刻の手直し」から入れてください。`, false);
+    if (outT) blockWithReason(document.getElementById("jBtnOut"),
+      `今日の退勤はもう記録しています（${outT}）。時刻を直すときは下の「押し忘れ・時刻の手直し」から入れてください。`, false);
+    else if (!state.open) blockWithReason(document.getElementById("jBtnOut"),
+      "出勤の記録が見つからないため、退勤は押せません。先に「出勤」を押してください。出勤を押し忘れたときは、下の「押し忘れ・時刻の手直し」から入れてください。", true);
+    document.getElementById("jError").classList.add("hidden");
     show("jimuView");
     return;
   }
@@ -555,6 +567,8 @@ async function enterReportForm(withPunchOut) {
   const outOnly = document.getElementById("outOnlyBtn");
   const reportOnlyBtn = document.getElementById("reportOnlyBtn");
   const back = document.getElementById("backBtn");
+  // ★R-20261111-01：手直しの入口は出勤中（退勤＋報告）の画面だけに出す
+  document.getElementById("openFixBtn").classList.toggle("hidden", !withPunchOut);
 
   if (withPunchOut) {
     const o = state.open;
@@ -578,6 +592,22 @@ async function enterReportForm(withPunchOut) {
     submit.classList.toggle("hidden", jimuOpen);
     reportOnlyBtn.classList.toggle("hidden", !jimuOpen);
     back.classList.add("hidden");
+    // ★R-20261109-10 5-b（2026-11-10 配車部）：事務所の出勤中は「退勤して報告する」を隠しているので、
+    //   「退勤だけする」をオレンジの大きい「退勤」ボタンにして出勤中バナーのすぐ下（一番上）に出す。
+    //   現場の出勤中は元の場所・元の見た目（白地の小さいボタン）。押したときの見た目は btnLook（5-a）
+    outOnly.disabled = false;
+    delete outOnly.dataset.blocked;
+    if (jimuOpen) {
+      outOnly.className = "w-full bg-orange-600 active:scale-95 transition text-white font-bold py-6 rounded-2xl shadow-lg text-2xl mb-4";
+      outOnly.textContent = "退勤";
+      banner.after(outOnly);
+    } else {
+      outOnly.className = "w-full border-2 border-slate-300 bg-white text-slate-600 font-bold py-3 rounded-2xl";
+      outOnly.textContent = "報告はあとで（退勤だけする）";
+      submit.after(outOnly);
+    }
+    outOnly.dataset.label = outOnly.textContent.trim();       // btnLook の「元に戻す」先をこの見た目にする
+    outOnly.dataset.cls = outOnly.className;
   } else {
     banner.classList.add("hidden");
     dateWrap.classList.remove("hidden");
@@ -747,6 +777,7 @@ function updateInDateUI() {
 const BTN_BASE = "w-full transition text-white font-bold py-6 rounded-2xl shadow-lg";
 function btnLook(btn, kind, text) {
   if (!btn) return;
+  delete btn.dataset.blocked;                                 // R-20261109-10：見た目を変えるたびに「押せない理由」を外す
   if (btn.dataset.label === undefined) {
     btn.dataset.label = btn.textContent.trim();
     btn.dataset.cls = btn.className;
@@ -767,9 +798,18 @@ function btnLook(btn, kind, text) {
   btn.textContent = text;
   btn.disabled = (kind !== "ng");
 }
+// ★R-20261109-10（2026-11-10 配車部）：押せない状態のボタンは disabled にせず（disabled だと押しても何も起きない）、
+// 理由を持たせておき、押されたら punchOnly がその理由を出す。gray=true なら灰色の見た目にする
+function blockWithReason(btn, reason, gray) {
+  if (!btn) return;
+  btn.disabled = false;
+  btn.dataset.blocked = reason;
+  if (gray) btn.className = BTN_BASE + (btn.dataset.cls.includes("mb-3") ? " mb-3" : " mb-4") + " text-2xl bg-slate-300";
+}
 function punchBtnFor(type, kubun) {
   if (kubun === "事務所") return document.getElementById(type === "in" ? "jBtnIn" : "jBtnOut");
-  return (type === "in") ? document.getElementById("btnIn") : null;
+  // ★R-20261109-10 5-a：報告画面の「退勤だけする」（outOnlyBtn）にも送信中・記録済み・失敗の見た目を付ける
+  return (type === "in") ? document.getElementById("btnIn") : document.getElementById("outOnlyBtn");
 }
 function punchIn() {
   if (inDateMode === "yesterday") return punchInYesterday();
@@ -820,6 +860,9 @@ async function punchOnly(type, kubun) {
 
   const site = (type === "in" && kubun === "現場") ? (document.getElementById("inSite").value || "") : "";
   const btn = punchBtnFor(type, kubun);
+  if (btn && btn.dataset.blocked) {                           // ★R-20261109-10：押せない状態なら理由を出して止める
+    err.textContent = btn.dataset.blocked; err.classList.remove("hidden"); return;
+  }
   if (btn && btn.disabled) return;                            // 二度押し防止（送信中・記録済みは押せない）
   btnLook(btn, "sending", "送信中…");
   try {
@@ -951,6 +994,15 @@ function finish(text, sub, warn, closeMs) {
 // ---------- 手直し ----------
 async function openFix() {
   show("fixView");
+  // ★R-20261111-01：出勤中に開いたら、出勤中の日の退勤欄に入れると退勤になることを一言出す
+  const openNote = document.getElementById("fixOpenNote");
+  if (state && state.open && state.open.date) {
+    const od = new Date(state.open.date + "T00:00:00");
+    openNote.textContent = `いま出勤中です（${od.getMonth()+1}/${od.getDate()}（${DOW_JA[od.getDay()]}） ${state.open.in || ""}〜）。出勤中の日の退勤欄に時刻を入れて保存すると、退勤として記録されます。出勤時刻だけ直すときは退勤欄を空のままにしてください。`;
+    openNote.classList.remove("hidden");
+  } else {
+    openNote.classList.add("hidden");
+  }
   const list = document.getElementById("fixList");
   list.innerHTML = '<p class="text-center text-slate-400 text-sm py-6">読み込み中…</p>';
   try {
