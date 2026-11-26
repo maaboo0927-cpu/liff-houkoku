@@ -38,6 +38,7 @@
   .kg{display:grid;gap:6px;font-size:12px}
   .kc{height:32px;border-radius:6px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding:0 3px}
   .lg{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-top:12px}
+  .bk{font-size:11px;line-height:1.25;text-align:center;color:var(--sub);white-space:nowrap} .bk b{font-size:13px;color:var(--ink)} .bkn{font-weight:800;font-size:13px;display:flex;align-items:center}
   .lg span.sw{display:inline-block;width:14px;height:14px;border-radius:4px;box-sizing:border-box;vertical-align:-2px;margin-right:6px}
   .ticks{display:grid;grid-template-columns:repeat(20,minmax(0,1fr));gap:2px;margin-top:8px} .ticks div{height:10px}
   .r3{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:24px;margin-top:4px}
@@ -235,7 +236,18 @@ function statusGrid(v, detail){
       const who = detail ? (x.D || []).map(y => "昼 " + (y.name || y.who) + " " + y.site).concat((x.N || []).map(y => "夜 " + (y.name || y.who) + " " + y.site)).join("\n") + (x.hold ? "置放 " + x.hold : "") : "";
       return `<td class="p-0.5"><div class="cell" style="${k.st}" title="${esc(who)}">${esc(x.status === "使用" ? (x.label || "使用") : k.t)}</div>${detail && who ? `<div class="text-[10px] text-slate-500 leading-tight whitespace-pre-line max-w-[8rem]">${esc(who)}</div>` : ""}</td>`; }).join("") + "</tr>";
   const tbl = (title, list) => `<p class="text-xs font-bold text-slate-500 mt-2 mb-1">${title}</p><div class="overflow-x-auto"><table class="text-xs"><thead><tr><th></th>${v.dates.map(d => `<th class="px-1 font-normal text-slate-500 whitespace-nowrap">${detail ? md(d) : md(d).replace("(", "<br>(")}</th>`).join("")}</tr></thead><tbody>${list.map(row).join("")}</tbody></table></div>`;
-  return (detail ? `<div class="lg" style="margin:0 0 8px">${KADO_LEGEND}</div>` : "") + tbl(`機械（${v.total.m}台）`, v.machines) + tbl(`回送車（${v.total.v}台）`, v.vehicles);
+  if (!v.blocks || !v.bcount) return (detail ? `<div class="lg" style="margin:0 0 8px">${KADO_LEGEND}</div>` : "") + tbl(`機械（${v.total.m}台）`, v.machines) + tbl(`回送車（${v.total.v}台）`, v.vehicles);
+  // R-20261123-01：ブロック（60／45／その他／4軸／7t）ごとの小さな表。見出し行に日付ごとの「空き n ／ 置放 n ／ 全 N」
+  const btbl = (kind, b) => { const list = v[kind].filter(u => u.block === b);
+    return `<p class="text-xs font-bold text-slate-600 mt-3 mb-1">${kind === "machines" ? "機械" : "回送車"} ${esc(b)}（${list.length}台）</p><div class="overflow-x-auto"><table class="text-xs"><thead><tr><th></th>${v.dates.map(d => `<th class="px-1 font-normal text-slate-500 whitespace-nowrap">${md(d)}</th>`).join("")}</tr>` +
+      `<tr><th class="pr-2 text-left font-normal text-slate-500 whitespace-nowrap">使用可能</th>${v.dates.map(d => `<th class="px-1 font-normal">${bkHead(((v.bcount[d] || {})[kind] || {})[b])}</th>`).join("")}</tr></thead><tbody>${list.map(row).join("")}</tbody></table></div>`; };
+  return (detail ? `<div class="lg" style="margin:0 0 8px">${KADO_LEGEND}</div>` : "") +
+    v.blocks.machines.map(b => btbl("machines", b)).join("") + v.blocks.vehicles.map(b => btbl("vehicles", b)).join("");
+}
+// ブロック見出しの1マス：「空き n ／ 置放 n ／ 全 N」（使用不可があれば「不可 n」も）。スマホ幅でも折り返さないよう3行に分ける
+function bkHead(c){
+  if (!c) return "";
+  return `<div class="bk"><div>空き <b>${c.free}</b></div><div>置放 ${c.hold}${c.ng ? ` <span style="color:#B23A0E;font-weight:700">不可 ${c.ng}</span>` : ""}</div><div>全 ${c.all}</div></div>`;
 }
 
 // ⑤メイン＝B案の表型：左列に番号、上に日付と「機械 n/N・車 n/N」（数は GAS の count＝今と同じ数え方）
@@ -244,7 +256,14 @@ function kadoTable(v){
   const hd = v.dates.map(d => `<div style="text-align:center;padding-bottom:6px"><div style="font-weight:800">${md(d)}</div><div class="lbl">機械 ${v.count[d].m}/${v.total.m} · 車 ${v.count[d].v}/${v.total.v}</div></div>`).join("");
   const rows = (list, color) => list.map(u => `<span class="num" style="font-weight:600;font-size:15px;display:flex;align-items:center;color:${color}">${esc(u.no)}</span>` +
     v.dates.map(d => { const k = kcell(u.days[d]); return `<div class="kc" style="${k.st}" title="${esc(k.t)}">${esc(k.t)}</div>`; }).join("")).join("");
-  return `<div style="overflow-x:auto;margin-top:16px"><div class="kg" style="min-width:${64 + n * 58}px;grid-template-columns:64px repeat(${n},minmax(0,1fr))"><span></span>${hd}${rows(v.machines, "#34363A")}${rows(v.vehicles, "#5A5D63")}</div></div>`;
+  if (!v.blocks || !v.bcount)
+    return `<div style="overflow-x:auto;margin-top:16px"><div class="kg" style="min-width:${64 + n * 58}px;grid-template-columns:64px repeat(${n},minmax(0,1fr))"><span></span>${hd}${rows(v.machines, "#34363A")}${rows(v.vehicles, "#5A5D63")}</div></div>`;
+  // R-20261123-01：機種ブロックごとに見出し行（ブロック名＋日付ごとの「空き n ／ 置放 n ／ 全 N」）→ そのブロックの行
+  const blk = (kind, b, color) => { const list = v[kind].filter(u => u.block === b);
+    return `<span class="bkn" style="border-top:2px solid #34363A;padding-top:6px;margin-top:6px">${esc(b)}</span>` +
+      v.dates.map(d => `<div style="border-top:2px solid #34363A;padding-top:6px;margin-top:6px">${bkHead(((v.bcount[d] || {})[kind] || {})[b])}</div>`).join("") + rows(list, color); };
+  return `<div style="overflow-x:auto;margin-top:16px"><div class="kg" style="min-width:${64 + n * 74}px;grid-template-columns:64px repeat(${n},minmax(0,1fr))"><span></span>${hd}` +
+    v.blocks.machines.map(b => blk("machines", b, "#34363A")).join("") + v.blocks.vehicles.map(b => blk("vehicles", b, "#5A5D63")).join("") + `</div></div>`;
 }
 
 const MAIN = {
@@ -315,8 +334,11 @@ Object.assign(MAIN, {
     const box = (t, big, small) => `<div><div class="lbl" style="font-size:12px">${t}</div>${big}<div class="lbl" style="font-size:12px;margin-top:6px">${small}</div></div>`;
     let h = "";
     if (v.minarai && !v.minarai.empty) {
-      h += v.minarai.people.map(p => { const f = Math.max(0, Math.min(20, Math.round(p.total / (p.goal || 100) * 20)));
-        return box(`見習い ${esc(p.name)}（60クラス）`, `<div class="num" style="font-size:44px">${p.total}<span style="font-size:20px;color:#C8CBD0"> / ${p.goal}</span></div><div class="ticks">${Array.from({length:20}, (_, i) => `<div style="background:${i < f ? "#A9D4F5" : "#4E5157"}"></div>`).join("")}</div>`, `残り${p.remain} · 今月${p.this_month}`); }).join("");
+      h += v.minarai.people.map(p => { const nm = esc(p.label || p.name), cls = esc(p.cls || "60");
+        if (p.goal == null)   // ゴールなし＝回数だけ（目盛り・残りは出さない。R-20261029-01）
+          return box(`見習い ${nm}（${cls}クラス）`, `<div class="num" style="font-size:44px">${p.total}<span style="font-size:20px;color:#C8CBD0"> 回</span></div>`, `今月${p.this_month}`);
+        const f = Math.max(0, Math.min(20, Math.round(p.total / (p.goal || 100) * 20)));
+        return box(`見習い ${nm}（${cls}クラス）`, `<div class="num" style="font-size:44px">${p.total}<span style="font-size:20px;color:#C8CBD0"> / ${p.goal}</span></div><div class="ticks">${Array.from({length:20}, (_, i) => `<div style="background:${i < f ? "#A9D4F5" : "#4E5157"}"></div>`).join("")}</div>`, `残り${p.remain} · 今月${p.this_month}`); }).join("");
     } else if (v.minarai) h += box("見習い", "", esc(v.minarai.empty));
     if (v.kintai && !v.kintai.empty) { const k = v.kintai;
       h += box(`出退勤の打刻なし（出勤/退勤・${md(k.from)}〜${md(k.to)}）`, `<div class="num" style="font-size:44px;color:#A9D4F5">${k.fy.inN} / ${k.fy.outN}<span style="font-size:20px"> 日</span></div>`, `${k.fy.people}人 · 今月 ${k.month.inN}/${k.month.outN}`);
@@ -341,8 +363,8 @@ Object.assign(DETAIL, {
     let h = "";
     if (v.minarai && !v.minarai.empty) {
       const mi = v.minarai;
-      h += `<h3 class="font-bold mb-1">見習い（60クラス）</h3><p class="text-xs text-slate-500 mb-2">${esc(mi.rule)}（〜${md(mi.upto)}）</p>` + mi.people.map(p =>
-        `<div class="mb-3"><p><b>${esc(p.name)}</b> 通算 <b>${p.total}</b>／${p.goal}・残り ${p.remain}（${esc(p.from)}から）</p>
+      h += `<h3 class="font-bold mb-1">見習い</h3><p class="text-xs text-slate-500 mb-2">${esc(mi.rule)}（〜${md(mi.upto)}）</p>` + mi.people.map(p =>
+        `<div class="mb-3"><p><b>${esc(p.label || p.name)}</b>（${esc(p.cls || "60")}クラス） 通算 <b>${p.total}</b>${p.goal == null ? "" : `／${p.goal}・残り ${p.remain}`}（${esc(p.from)}から）</p>
          <p class="text-xs my-1">${(p.months || []).map(x => `${ymJ(x.month)} ${x.count == null ? "－" : x.count}`).join("　")}</p>
          <table ${TBL}><tbody>${(p.items || []).slice().reverse().map(x => `<tr class="border-b"><td class="px-1 py-1 whitespace-nowrap">${md(x.date)}</td><td class="px-1">${x.dn === "N" ? "夜" : "昼"}</td><td class="px-1">${esc(x.text)}</td></tr>`).join("")}</tbody></table></div>`).join("") +
         (mi.notes && mi.notes.length ? `<p class="text-[11px] text-amber-700">${mi.notes.map(esc).join("／")}</p>` : "");
